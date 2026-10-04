@@ -27,7 +27,7 @@ var RAW = {
 };
 var SETTINGS_SHEET = 'settings';
 // Looked-up genre/year per song, keyed by Spotify URI.
-var SONG_INFO = { sheet: 'raw_song_info', cols: ['Spotify URI', 'Artist', 'Title', 'Genre', 'Year', 'Looked Up'] };
+var SONG_INFO = { sheet: 'raw_song_info', cols: ['Spotify URI', 'Artist', 'Title', 'Genre', 'Year', 'Looked Up', 'Lead Artist'] };
 var LOOKUP_TIME_BUDGET_MS = 4.5 * 60 * 1000; // Apps Script stops scripts at 6 minutes
 
 // ---- Menu ----------------------------------------------------------------
@@ -195,7 +195,7 @@ function readSongInfo_() {
   var sh = SpreadsheetApp.getActive().getSheetByName(SONG_INFO.sheet);
   if (sh && sh.getLastRow() > 1) {
     sh.getRange(2, 1, sh.getLastRow() - 1, SONG_INFO.cols.length).getValues().forEach(function (r) {
-      info.set(String(r[0]), { genre: String(r[3] || ''), year: r[4] ? Number(r[4]) : null });
+      info.set(String(r[0]), { genre: String(r[3] || ''), year: r[4] ? Number(r[4]) : null, lead: String(r[6] || '') });
     });
   }
   return info;
@@ -330,7 +330,9 @@ function lookupSongBatch_(songs, deadline) {
       t.track ? isrcYear_(t.track.isrc) : null,
       album ? parseInt(String(album.release_date || '').slice(0, 4), 10) : null
     ]);
-    rows.push([s.uri, s.artist, s.title, album ? deezerGenre_(album) : '', year || '', today]);
+    // The matched Deezer track's main artist, spelled as Deezer has it.
+    var lead = t.track ? t.track.artist.name : '';
+    rows.push([s.uri, s.artist, s.title, album ? deezerGenre_(album) : '', year || '', today, lead]);
   }
   return rows;
 }
@@ -374,16 +376,20 @@ function pickDeezerTrack_(json, artist, title) {
 }
 
 /**
- * Spotify joins multiple artists with commas, but some names contain one
- * ("Tyler, The Creator"), so accept any leading run of comma-separated parts.
+ * Spotify joins multiple artists with ", ", but some names contain one
+ * ("Tyler, The Creator", "Crosby, Stills & Nash"), so `name` matches if it
+ * equals any leading run of the parts (i.e. it's the lead artist).
  */
 function isArtist_(name, artists) {
-  var key = matchKey_(name), parts = String(artists).split(',');
+  var key = matchKey_(name), parts = String(artists).split(', ');
   for (var i = 1; i <= parts.length; i++) {
-    if (matchKey_(parts.slice(0, i).join(',')) === key) return true;
+    if (matchKey_(parts.slice(0, i).join(', ')) === key) return true;
   }
   return false;
 }
+
+/** Lead artist when Deezer didn't identify one: the first name in the export. */
+function leadArtistGuess_(artists) { return String(artists).split(', ')[0].trim(); }
 
 function deezerGenre_(album) {
   var g = album.genres && album.genres.data && album.genres.data[0];
@@ -420,7 +426,7 @@ function earliestYear_(years) {
   return ok.length ? Math.min.apply(null, ok) : null;
 }
 
-function primaryArtist_(artists) { return String(artists).split(',')[0].trim(); }
+function primaryArtist_(artists) { return leadArtistGuess_(artists); }
 
 /** "Doctor My Eyes - Remastered" -> "Doctor My Eyes"; drops (Live), (feat. X), etc. */
 function baseTitle_(title) {
@@ -517,6 +523,7 @@ function buildLeagueTables(datasets, leagueName, songInfo) {
     }
     songs.push({
       artist: s['Artist(s)'], title: s.Title, album: s.Album,
+      lead: (info && info.lead) || leadArtistGuess_(s['Artist(s)']),
       competitor: nameOf(s['Submitter ID']), points: subPoints.get(key) || 0,
       round: round ? round.Name : '', roundId: s['Round ID'], submitterId: s['Submitter ID'],
       voters: subVoters.get(key) || NO_VOTERS,
@@ -524,7 +531,7 @@ function buildLeagueTables(datasets, leagueName, songInfo) {
     });
   });
   songs.sort(function (a, b) {
-    return ciCompare_(a.artist, b.artist) || ciCompare_(a.title, b.title) || ciCompare_(a.round, b.round);
+    return ciCompare_(a.lead, b.lead) || ciCompare_(a.title, b.title) || ciCompare_(a.round, b.round);
   });
 
   var roundList = Array.from(rounds.values()).sort(function (a, b) {
@@ -575,6 +582,21 @@ function buildLeagueTables(datasets, leagueName, songInfo) {
   }).map(function (c) {
     return [c.name, c.points, c.songs, c.songs ? Math.round(c.points / c.songs * 100) / 100 : '', c.wins, c.top3];
   });
+
+  // Running total of songs per artist, using the first artist in the export's
+  // Artist(s) field (split on ", "). Every submission counts.
+  var byArtist = new Map();
+  songs.forEach(function (s) {
+    var name = leadArtistGuess_(s.artist), key = name.toLowerCase();
+    var round = rounds.get(s.roundId), created = round ? round.Created : '';
+    var a = byArtist.get(key) || { name: name, songs: 0, lastCreated: '', lastRound: '' };
+    a.songs++;
+    if (created >= a.lastCreated) { a.lastCreated = created; a.lastRound = s.round; }
+    byArtist.set(key, a);
+  });
+  var artistTotals = Array.from(byArtist.values()).sort(function (a, b) {
+    return b.songs - a.songs || ciCompare_(a.name, b.name);
+  }).map(function (a) { return [a.name, a.songs, a.lastRound]; });
 
   // All-time top 25 songs (ties at 25th place are all included).
   var ranked = songs.slice().sort(function (a, b) { return b.points - a.points || ciCompare_(a.artist, b.artist); });
@@ -638,11 +660,12 @@ function buildLeagueTables(datasets, leagueName, songInfo) {
   }, function (a, b) { return lastIfUnknown(a, b) || ciCompare_(a[0], b[0]); });
 
   return {
-    songs: songs.map(function (s) { return [s.artist, s.title, s.album, s.competitor, s.points, s.round, s.genre, s.year]; }),
+    songs: songs.map(function (s) { return [s.lead, s.title, s.album, s.competitor, s.points, s.round, s.genre, s.year]; }),
     byGenre: byGenre,
     byDecade: byDecade,
     topSongs: topSongs,
     fans: fans,
+    artistTotals: artistTotals,
     songsMissingInfo: songsMissingInfo,
     rounds: roundList.map(function (r) { return [r.Name, r.Description, r['Playlist URL'], leagueName]; }),
     points: points,
@@ -723,7 +746,7 @@ var TITLE_BG = '#000000', HEADER_BG = '#434343', HEADER_FG = '#ff0000';
 
 function writeSheets_(ss, result) {
   var songs = writeTable_(ss, 'Songs', 'Artist / Song Master',
-    ['Artist(s)', 'Title', 'Album', 'Competitors Name', 'Points Assigned', 'Rounds Name', 'Genre', 'Year'],
+    ['Artist', 'Title', 'Album', 'Competitors Name', 'Points Assigned', 'Rounds Name', 'Genre', 'Year'],
     [220, 260, 260, 150, 110, 300, 120, 60], result.songs);
 
   // League stats beside the song list.
@@ -751,6 +774,9 @@ function writeSheets_(ss, result) {
   writeTable_(ss, 'Points', '"Lifetime" League Points',
     ['Competitor Name', 'Total Points', 'Songs', 'Avg Points / Song', 'Round Wins', 'Top 3 Finishes'],
     [200, 100, 70, 130, 100, 120], result.points);
+
+  writeTable_(ss, 'Artists', 'Songs by Artist',
+    ['Artist', 'Songs', 'Last Round Used'], [260, 70, 320], result.artistTotals);
 
   // Stats tab: side-by-side tables, each followed by a blank spacer column.
   var stats = ss.getSheetByName('Stats') || ss.insertSheet('Stats');
@@ -780,7 +806,7 @@ function writeSheets_(ss, result) {
   stats.setFrozenRows(2);
 
   // Put the tabs first, in order.
-  ['Songs', 'Rounds', 'Points', 'Stats'].forEach(function (name, i) {
+  ['Songs', 'Rounds', 'Points', 'Artists', 'Stats'].forEach(function (name, i) {
     ss.setActiveSheet(ss.getSheetByName(name));
     ss.moveActiveSheet(i + 1);
   });
@@ -853,6 +879,7 @@ var UPLOAD_HTML = [
 if (typeof module !== 'undefined') {
   module.exports = {
     buildLeagueTables: buildLeagueTables, parseCsvObjects: parseCsvObjects, naturalCompare_: naturalCompare_,
-    lookupSongBatch_: lookupSongBatch_, baseTitle_: baseTitle_, matchKey_: matchKey_, isrcYear_: isrcYear_
+    lookupSongBatch_: lookupSongBatch_, baseTitle_: baseTitle_, matchKey_: matchKey_, isrcYear_: isrcYear_,
+    deezerSearchUrl_: deezerSearchUrl_, pickDeezerTrack_: pickDeezerTrack_
   };
 }

@@ -11,7 +11,7 @@ There are two ways to use it:
 | Where | [`google-sheet/`](google-sheet/) | [`build-league-sheet.js`](build-league-sheet.js) |
 | Who runs it | Anyone with the sheet open, from a menu | Someone with Node.js installed |
 | Sharing | Share the sheet link with the league | Send the `.xlsx` file around |
-| Tabs | Songs, Rounds, Points, Stats | Songs, Rounds, Points |
+| Tabs | Songs, Rounds, Points, Artists, Stats | Songs, Rounds, Points |
 | Genre & year lookup | Yes | No |
 
 ## Google Sheet
@@ -35,11 +35,14 @@ about 5 minutes and needs no installs.
 
 ### What's in the tabs
 
-- **Songs:** every submission with its competitor, points, round, genre and year,
+- **Songs:** every submission with its lead artist (as Deezer lists it),
+  competitor, points, round, genre and year,
   plus league totals (unique artists, songs, submissions, rounds, competitors).
 - **Rounds:** every round with its description, playlist link and league name.
 - **Points:** lifetime points per competitor, songs submitted, average points per
   song, round wins and top-3 finishes.
+- **Artists:** running total of songs submitted per lead artist (first name in
+  the export, split on ", "), with the last round each was used in.
 - **Stats:** all-time top 25 songs, each competitor's biggest fan, and the share
   of songs and average points by genre and by decade recorded.
 

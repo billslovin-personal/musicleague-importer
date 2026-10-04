@@ -1,11 +1,16 @@
 # Music League Google Sheet — Setup
 
-This turns a Google Sheet into the league's master spreadsheet with four tabs:
+This turns a Google Sheet into the league's master spreadsheet with five tabs:
 
-- **Songs:** every submission with its points, round, genre and year.
+- **Songs:** every submission with its lead artist, points, round, genre and
+  year.
 - **Rounds:** every round with its description and playlist link.
 - **Points:** lifetime points per competitor, plus songs submitted, average
   points per song, round wins and top-3 finishes.
+- **Artists:** running total of songs submitted per artist, with the last round
+  each artist was used in. Handy for rounds with "artist used only once" rules.
+  It counts the first artist in the Music League export, splitting on ", "
+  (so "Crosby, Stills & Nash" counts as "Crosby").
 - **Stats:** the all-time top 25 songs, each competitor's biggest fan (who has
   given them the most points), and the share of songs and average points by
   genre and by decade recorded.
@@ -56,7 +61,11 @@ After the first import you can delete the empty **Sheet1** tab.
 2. Click **Music League → Look up genres & years** to fill in the new songs.
    A week's songs take under a minute.
 
-### About genres and years
+### About artists, genres and years
+- **Artist** on the Songs tab is the song's lead artist, spelled as Deezer
+  lists it. Until a song has been looked up, or if Deezer doesn't have it, the
+  first artist named in the Music League export is shown instead. The "Total
+  Unique Artists" stat still counts each distinct artist credit from the export.
 - **Genre** comes from Deezer and is a broad label (Rock, Pop, Alternative,
   Rap/Hip Hop, …). About 1 in 8 songs has no genre there and shows as *Unknown*.
 - **Year** is the earliest release of that recording found in MusicBrainz or
