@@ -978,6 +978,7 @@ function writeTable_(ss, name, title, headers, widths, rows) {
  */
 function writeTaste_(ss, taste) {
   var sh = ss.getSheetByName('Taste') || ss.insertSheet('Taste');
+  sh.setFrozenColumns(0); // merging titles across a frozen column fails on rebuilds
   sh.clear();
   sh.setConditionalFormatRules([]);
   sh.getRange(1, 1, sh.getMaxRows(), sh.getMaxColumns()).breakApart();
@@ -990,6 +991,10 @@ function writeTaste_(ss, taste) {
   function slice(from, n) { return taste.rows.map(function (r) { return r.slice(from, from + n); }); }
   var pct = '0%;-0%;'; // blank instead of 0%
   writeBlock_(sh, 1, 'Competitor Taste', taste.summaryHeaders, slice(0, nSummary));
+  // The name column is frozen, and Sheets can't freeze part of a merged cell, so
+  // un-merge this title; left-aligned, it still spills across the empty cells.
+  sh.getRange(1, 1, 1, nSummary).breakApart();
+  sh.getRange(1, 1).setHorizontalAlignment('left');
   var rules = [];
   [[nSummary + 1, '% of Their Songs by Decade', taste.decades],
    [nSummary + nDec + 1, '% of Their Songs in the League\'s Top Genres', taste.genres]].forEach(function (b) {
