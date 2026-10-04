@@ -42,6 +42,7 @@ async function main() {
 
   // Keyed maps give us de-duplication; insertion order preserves file order.
   const competitors = new Map(); // ID -> name
+  const nameAsOf = new Map();    // ID -> newest round date the name came from
   const rounds = new Map();      // Round ID -> round
   const submissions = new Map(); // Round ID|URI -> submission
   const votes = new Map();       // Round ID|URI|Voter ID -> vote
@@ -49,9 +50,14 @@ async function main() {
 
   for (const z of zips) {
     const t = await readZip(path.join(INPUT_DIR, z));
+    // An export's names are current as of its newest round; the newest name wins.
+    const asOf = t.rounds.reduce((max, r) => (clean(r.Created) > max ? clean(r.Created) : max), '');
     for (const c of t.competitors) {
       raw.competitors++;
-      competitors.set(clean(c.ID), clean(c.Name));
+      const id = clean(c.ID);
+      if ((nameAsOf.get(id) || '') > asOf) continue;
+      competitors.set(id, clean(c.Name));
+      nameAsOf.set(id, asOf);
     }
     for (const r of t.rounds) {
       raw.rounds++;

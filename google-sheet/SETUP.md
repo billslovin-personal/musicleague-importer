@@ -57,7 +57,8 @@ Viewers can see and filter the tabs but can't change data or run the import.
 
 - The raw data from every upload is stored in hidden tabs (`raw_competitors`,
   `raw_rounds`, `raw_submissions`, `raw_votes`, `settings`). Don't edit these.
-- De-duplication: competitors by ID (the latest name wins), rounds by ID, songs
-  by song + round, and votes by song + round + voter.
+- De-duplication: competitors by ID, rounds by ID, songs by song + round, and
+  votes by song + round + voter. Zips can be uploaded in any order. If someone
+  changed their display name, the name from the most recent season is used.
 - A song's points are the votes it got in the round it was submitted to.
   A competitor's lifetime points are the total across all their songs.

@@ -18,7 +18,7 @@ var DEFAULT_LEAGUE_NAME = 'MFFL VIII';
 
 // Hidden tabs that hold the de-duplicated raw export data.
 var RAW = {
-  competitors: { sheet: 'raw_competitors', cols: ['ID', 'Name'] },
+  competitors: { sheet: 'raw_competitors', cols: ['ID', 'Name', 'Name As Of'] },
   rounds: { sheet: 'raw_rounds', cols: ['ID', 'Created', 'Name', 'Description', 'Playlist URL'] },
   submissions: { sheet: 'raw_submissions', cols: ['Spotify URI', 'Title', 'Album', 'Artist(s)', 'Submitter ID', 'Round ID'] },
   votes: { sheet: 'raw_votes', cols: ['Spotify URI', 'Voter ID', 'Points Assigned', 'Round ID'] }
@@ -163,7 +163,9 @@ function getLeagueName_() {
 /**
  * @param {Array<{competitors, rounds, submissions, votes}>} datasets
  *   In processing order; each table is an array of row objects keyed by the
- *   export's column names. Later datasets win when the same record repeats.
+ *   export's column names. Later datasets win when the same record repeats,
+ *   except competitor names: the name from the export with the most recent
+ *   rounds wins, so upload order doesn't matter.
  */
 function buildLeagueTables(datasets, leagueName) {
   var competitors = new Map(); // ID -> row
@@ -172,9 +174,18 @@ function buildLeagueTables(datasets, leagueName) {
   var votes = new Map();       // Round ID|URI|Voter ID -> row
 
   datasets.forEach(function (t) {
+    // An export's names are current as of its newest round.
+    var exportAsOf = t.rounds.reduce(function (max, r) {
+      var created = clean_(r.Created);
+      return created > max ? created : max;
+    }, '');
     t.competitors.forEach(function (c) {
       var id = clean_(c.ID);
-      if (id) competitors.set(id, { 'ID': id, 'Name': clean_(c.Name) });
+      if (!id) return;
+      var asOf = clean_(c['Name As Of']) || exportAsOf;
+      var existing = competitors.get(id);
+      if (existing && existing['Name As Of'] > asOf) return;
+      competitors.set(id, { 'ID': id, 'Name': clean_(c.Name), 'Name As Of': asOf });
     });
     t.rounds.forEach(function (r) {
       var id = clean_(r.ID);
