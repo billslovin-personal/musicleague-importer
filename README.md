@@ -34,6 +34,8 @@ A Google Apps Script that adds a **Music League** menu to a Google Sheet:
   that don't have them yet. Each run stops after about 4½ minutes (Google's
   limit) and picks up where it left off next time.
 - **Rebuild tabs:** regenerate the tabs from the stored data.
+- **League name…:** label uploads with the zip's file name (default) or a name
+  you enter; the choice is saved with the sheet.
 - **Start a new league (erase everything)…:** wipe the sheet for a brand-new
   league, after a confirmation.
 
@@ -53,7 +55,7 @@ APIs.
 
 - **Songs:** every submission with its lead artist, title, album, competitor,
   points, round, genre and year, plus league totals (unique artist credits,
-  songs, submissions, rounds and competitors).
+  songs, submissions, rounds, competitors and genres).
 - **Rounds:** every round with its description, playlist link and league name.
 - **Points:** lifetime points per competitor, songs submitted, average points
   per song, round wins and top-3 finishes.
@@ -103,8 +105,9 @@ safe:
 | Vote | Round ID + Spotify URI + voter ID |
 
 **League name:** exports don't include it, so the zip's file name (without
-".zip") is the league name: `MFFL VIII.zip` → **MFFL VIII**. Each zip's
-rounds keep the name of the file they came from; rename and re-upload a zip to
+".zip") is the league name: `MFFL VIII.zip` → **MFFL VIII**. In the Google
+Sheet, **League name…** can switch uploads to a fixed name you enter instead.
+Each zip's rounds keep the name they were uploaded with; re-upload a zip to
 change it.
 
 **Points:** a song's points are the votes it got in the round it was submitted

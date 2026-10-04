@@ -3,7 +3,8 @@
 This turns a Google Sheet into the league's master spreadsheet with six tabs:
 
 - **Songs:** every submission with its lead artist, points, round, genre and
-  year.
+  year, plus league totals (artists, songs, submissions, rounds, competitors
+  and genres).
 - **Rounds:** every round with its description and playlist link.
 - **Points:** lifetime points per competitor, plus songs submitted, average
   points per song, round wins and top-3 finishes.
@@ -57,12 +58,18 @@ free public music databases, Deezer and MusicBrainz.
 
 After the first import you can delete the empty **Sheet1** tab.
 
-### Naming the zip files (league name)
-Music League's exports don't include the league's name, so the zip's file
-name is used as the league name. Rename each export to its league's name
-before uploading, e.g. `MFFL VIII.zip` shows as **MFFL VIII** in the League
-column of the Rounds tab. To fix a name later, rename the zip and upload it
-again; only that zip's rounds change.
+### League name
+Music League's exports don't include the league's name. By default the zip's
+file name is used: rename each export to its league's name before uploading,
+e.g. `MFFL VIII.zip` shows as **MFFL VIII** in the League column of the
+Rounds tab.
+
+To use a name of your own instead, open **Music League → League name…**,
+choose **Use this name**, type it and click **Save**. The choice is saved with
+the sheet and applies to every zip uploaded after that, until you change it
+back to **Use the zip file name(s)**. Rounds already uploaded keep their name;
+to relabel a season, change the setting and upload its zip again (nothing gets
+duplicated).
 
 ### Each new week / season
 1. Download the new export zip from Music League, name it as above, and upload
@@ -92,6 +99,8 @@ again; only that zip's rounds change.
 ## Other menu items
 
 - **Rebuild tabs:** regenerates all the tabs from the stored data.
+- **League name…:** choose whether uploads are labelled with the zip's file
+  name or a name you enter (see *League name* above).
 - **Start a new league (erase everything)…:** for when a brand-new league
   begins. After you confirm, it permanently deletes all songs, rounds, votes,
   points, stats and looked-up genres/years. It only touches the tabs this

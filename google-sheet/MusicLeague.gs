@@ -39,6 +39,8 @@ function onOpen() {
     .addItem('Look up genres & years', 'lookUpGenresAndYears')
     .addItem('Rebuild tabs', 'rebuildFromStoredData')
     .addSeparator()
+    .addItem('League name…', 'showLeagueNameDialog')
+    .addSeparator()
     .addItem('Start a new league (erase everything)…', 'startNewLeague')
     .addToUi();
 }
@@ -46,6 +48,48 @@ function onOpen() {
 function showUploadDialog() {
   var html = HtmlService.createHtmlOutput(UPLOAD_HTML).setWidth(420).setHeight(230);
   SpreadsheetApp.getUi().showModalDialog(html, 'Upload Music League export zips');
+}
+
+// ---- League name setting ---------------------------------------------------
+//
+// Uploaded zips' rounds are labelled either with the zip's file name (the
+// default) or with a fixed name entered in the "League name…" dialog. The
+// choice is saved with the spreadsheet and applies to every upload after it.
+
+var LEAGUE_MODE_PROP = 'leagueNameMode';  // 'file' or 'custom'
+var LEAGUE_NAME_PROP = 'leagueNameCustom';
+
+function getLeagueSetting_() {
+  var props = PropertiesService.getDocumentProperties();
+  var name = props.getProperty(LEAGUE_NAME_PROP) || '';
+  var mode = props.getProperty(LEAGUE_MODE_PROP) === 'custom' && name ? 'custom' : 'file';
+  return { mode: mode, name: name };
+}
+
+/** Called from the League name dialog. */
+function saveLeagueSetting(mode, name) {
+  name = clean_(name);
+  if (mode === 'custom' && !name) throw new Error('Enter a league name, or choose "Use the zip file name(s)".');
+  var props = PropertiesService.getDocumentProperties();
+  props.setProperty(LEAGUE_MODE_PROP, mode === 'custom' ? 'custom' : 'file');
+  if (name) props.setProperty(LEAGUE_NAME_PROP, name);
+  return mode === 'custom'
+    ? 'Zips you upload from now on will be labelled "' + name + '".'
+    : 'Zips you upload from now on will be labelled with their file names.';
+}
+
+function showLeagueNameDialog() {
+  var s = getLeagueSetting_();
+  var html = HtmlService.createHtmlOutput(LEAGUE_HTML
+    .replace('__MODE__', function () { return JSON.stringify(s.mode); })
+    .replace('__NAME__', function () { return JSON.stringify(s.name).replace(/</g, '\\u003c'); }))
+    .setWidth(420).setHeight(270);
+  SpreadsheetApp.getUi().showModalDialog(html, 'League name');
+}
+
+/** League name for an uploaded zip's rounds, per the saved setting. */
+function leagueForUpload_(fileName, setting) {
+  return setting.mode === 'custom' ? setting.name : leagueFromFileName_(fileName);
 }
 
 /** Erases all league data and looked-up song info, leaving empty tabs. */
@@ -64,10 +108,15 @@ function startNewLeague() {
     var sh = ss.getSheetByName(name);
     if (sh) ss.deleteSheet(sh);
   });
+  // A custom name from the old league wouldn't fit the new one.
+  var props = PropertiesService.getDocumentProperties();
+  props.deleteProperty(LEAGUE_MODE_PROP);
+  props.deleteProperty(LEAGUE_NAME_PROP);
   rebuildFromStoredData(); // leaves empty tabs
 
-  ui.alert('Everything has been erased. Upload the new league\'s zip files with ' +
-    'Music League → Upload zip files… (name each zip after its league, e.g. "MFFL VIII.zip").');
+  ui.alert('Everything has been erased, and the league name is back to using file names. ' +
+    'Upload the new league\'s zip files with Music League → Upload zip files… (name each zip ' +
+    'after its league, e.g. "MFFL X.zip", or set a name with Music League → League name…).');
 }
 
 // ---- Upload / rebuild ----------------------------------------------------
@@ -85,10 +134,10 @@ function importZips(files) {
   });
 
   files.sort(function (a, b) { return naturalCompare_(a.name, b.name); });
-  var datasets = [readStoredData_()];
+  var datasets = [readStoredData_()], leagueSetting = getLeagueSetting_();
   files.forEach(function (f) {
     var blob = Utilities.newBlob(Utilities.base64Decode(f.data), 'application/zip', f.name);
-    datasets.push(readZip_(blob, f.name));
+    datasets.push(readZip_(blob, f.name, leagueForUpload_(f.name, leagueSetting)));
   });
   var result = buildLeagueTables(datasets, readSongInfo_());
   saveRaw_(result.raw);
@@ -185,8 +234,8 @@ function readSongInfo_() {
   return info;
 }
 
-function readZip_(blob, name) {
-  var tables = { name: name, league: leagueFromFileName_(name) };
+function readZip_(blob, name, league) {
+  var tables = { name: name, league: league };
   Utilities.unzip(blob).forEach(function (b) {
     var m = b.getName().match(/(?:^|\/)(competitors|rounds|submissions|votes)\.csv$/i);
     if (m) tables[m[1].toLowerCase()] = parseCsvObjects(b.getDataAsString('UTF-8'));
@@ -752,7 +801,8 @@ function buildLeagueTables(datasets, songInfo) {
       ['Total Songs', uniqueSongs.size],
       ['Total Submissions', songs.length],
       ['Total Rounds', roundList.length],
-      ['Total Competitors', competitors.size]
+      ['Total Competitors', competitors.size],
+      ['Total Genres', new Set(songs.map(function (s) { return s.genre; }).filter(Boolean)).size]
     ],
     raw: {
       competitors: Array.from(competitors.values()),
@@ -1050,6 +1100,33 @@ var UPLOAD_HTML = [
   '</script>'
 ].join('\n');
 
+// ---- League name dialog ------------------------------------------------------
+
+var LEAGUE_HTML = [
+  '<style>body{font-family:Arial,sans-serif;font-size:14px}label{display:block;margin-top:10px}',
+  '#name{margin:6px 0 0 24px;width:300px;padding:4px}#msg{margin-top:12px;white-space:pre-wrap}',
+  'button{margin-top:14px;padding:6px 14px}</style>',
+  '<div>Which league name should uploaded zips be labelled with on the Rounds tab?',
+  ' This applies to zips you upload from now on.</div>',
+  '<label><input type="radio" name="mode" value="file" id="file"> Use the zip file name(s)',
+  ' <span style="color:#666">(e.g. "MFFL VIII.zip" → MFFL VIII)</span></label>',
+  '<label><input type="radio" name="mode" value="custom" id="custom"> Use this name:</label>',
+  '<input type="text" id="name" placeholder="League name">',
+  '<br><button id="save" onclick="save()">Save</button>',
+  '<div id="msg"></div>',
+  '<script>',
+  'var mode=__MODE__,name=__NAME__;',
+  'document.getElementById(mode).checked=true;document.getElementById("name").value=name;',
+  'document.getElementById("name").oninput=function(){document.getElementById("custom").checked=true;};',
+  'function save(){var m=document.getElementById("msg"),b=document.getElementById("save");',
+  ' var chosen=document.getElementById("custom").checked?"custom":"file";b.disabled=true;',
+  ' google.script.run.withSuccessHandler(function(s){m.textContent=s;',
+  '   setTimeout(function(){google.script.host.close();},2000);})',
+  '  .withFailureHandler(function(e){m.textContent=e.message;b.disabled=false;})',
+  '  .saveLeagueSetting(chosen,document.getElementById("name").value);}',
+  '</script>'
+].join('\n');
+
 // Allow the core logic to be tested in Node.
 if (typeof module !== 'undefined') {
   module.exports = {
@@ -1057,6 +1134,6 @@ if (typeof module !== 'undefined') {
     lookupSongBatch_: lookupSongBatch_, baseTitle_: baseTitle_, matchKey_: matchKey_, isrcYear_: isrcYear_,
     deezerSearchUrl_: deezerSearchUrl_, pickDeezerTrack_: pickDeezerTrack_, leagueFromFileName_: leagueFromFileName_,
     musicBrainzUrl_: musicBrainzUrl_, fetchMusicBrainz_: fetchMusicBrainz_, musicBrainzGenre_: musicBrainzGenre_,
-    titleCaseGenre_: titleCaseGenre_
+    titleCaseGenre_: titleCaseGenre_, LEAGUE_HTML: LEAGUE_HTML, leagueForUpload_: leagueForUpload_
   };
 }
