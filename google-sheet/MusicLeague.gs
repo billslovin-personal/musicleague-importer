@@ -177,7 +177,9 @@ function readSongInfo_() {
   var sh = SpreadsheetApp.getActive().getSheetByName(SONG_INFO.sheet);
   if (sh && sh.getLastRow() > 1) {
     sh.getRange(2, 1, sh.getLastRow() - 1, SONG_INFO.cols.length).getValues().forEach(function (r) {
-      info.set(String(r[0]), { genre: String(r[3] || ''), year: r[4] ? Number(r[4]) : null, lead: String(r[6] || '') });
+      info.set(String(r[0]), {
+        genre: String(r[3] || ''), year: r[4] ? Number(r[4]) : null, lead: String(r[6] || ''), source: String(r[7] || '')
+      });
     });
   }
   return info;
@@ -444,6 +446,27 @@ function topGenre_(entity) {
   return genres.length ? titleCaseGenre_(genres[0].name) : '';
 }
 
+/**
+ * Deezer's broad genre names, renamed to match the MusicBrainz genres they
+ * overlap with, so fallback genres merge with MusicBrainz ones. Deezer genres
+ * not listed (Rock, Pop, Blues, ...) already use the same name.
+ */
+var DEEZER_TO_MUSICBRAINZ_GENRE = {
+  'Alternative': 'Alternative Rock',
+  'Rap/Hip Hop': 'Hip Hop',
+  'Electro': 'Electronic',
+  'Films/Games': 'Soundtrack',
+  'Soul & Funk': 'Soul',
+  'Singer & Songwriter': 'Singer-Songwriter',
+  'Latin Music': 'Latin',
+  'Kids': "Children's Music"
+};
+
+/** Genre as shown in the sheet. Only Deezer-sourced names are renamed. */
+function displayGenre_(genre, source) {
+  return source === 'Deezer' && DEEZER_TO_MUSICBRAINZ_GENRE[genre] || genre;
+}
+
 function titleCaseGenre_(name) {
   return String(name).split(/(\s+|-|\/)/).map(function (w, i) {
     if (/&/.test(w)) return w.toUpperCase(); // "r&b" -> "R&B"
@@ -574,7 +597,8 @@ function buildLeagueTables(datasets, songInfo) {
       competitor: nameOf(s['Submitter ID']), points: subPoints.get(key) || 0,
       round: round ? round.Name : '', roundId: s['Round ID'], submitterId: s['Submitter ID'],
       voters: subVoters.get(key) || NO_VOTERS,
-      genre: info ? info.genre : '', year: info && info.year ? info.year : '', lookedUp: !!info
+      genre: info ? displayGenre_(info.genre, info.source) : '',
+      year: info && info.year ? info.year : '', lookedUp: !!info
     });
   });
   songs.sort(function (a, b) {
@@ -706,6 +730,20 @@ function buildLeagueTables(datasets, songInfo) {
   var byGenre = breakdown(function (s) {
     return s.genre || (s.lookedUp ? UNKNOWN : NOT_YET);
   }, function (a, b) { return lastIfUnknown(a, b) || b[1] - a[1] || ciCompare_(a[0], b[0]); });
+
+  // Genres with a single song are grouped into one "Other" row (shown above Unknown).
+  var OTHER = 'Other', other = { n: 0, pts: 0 };
+  byGenre = byGenre.filter(function (g) {
+    if (g[1] !== 1 || g[0] === UNKNOWN || g[0] === NOT_YET) return true;
+    other.n++;
+    other.pts += g[3];
+    return false;
+  });
+  if (other.n) {
+    var otherRow = [OTHER, other.n, other.n / songs.length, Math.round(other.pts / other.n * 100) / 100];
+    var at = byGenre.findIndex(function (g) { return g[0] === UNKNOWN || g[0] === NOT_YET; });
+    byGenre.splice(at < 0 ? byGenre.length : at, 0, otherRow);
+  }
   var byDecade = breakdown(function (s) {
     return s.year ? Math.floor(s.year / 10) * 10 + 's' : (s.lookedUp ? UNKNOWN : NOT_YET);
   }, function (a, b) { return lastIfUnknown(a, b) || ciCompare_(a[0], b[0]); });
