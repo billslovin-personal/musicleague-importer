@@ -401,12 +401,17 @@ function mbEarliestYear_(json, artist, title) {
   return earliestYear_(years);
 }
 
-/** ISRCs look like CC-XXX-YY-NNNNN; YY is the year the code was assigned. */
+/**
+ * ISRCs look like CC-XXX-YY-NNNNN; YY is the year the code was assigned (some
+ * labels use the original recording year). Two digits can't tell 1937 from a
+ * typo, so years before 1950 are ignored.
+ */
 function isrcYear_(isrc) {
   var m = String(isrc || '').match(/^[A-Z]{2}[A-Z0-9]{3}(\d{2})\d{5}$/i);
   if (!m) return null;
   var yy = Number(m[1]), nowYY = new Date().getFullYear() % 100;
-  return yy <= nowYY ? 2000 + yy : 1900 + yy;
+  var year = yy <= nowYY ? 2000 + yy : 1900 + yy;
+  return year >= 1950 ? year : null;
 }
 
 function earliestYear_(years) {
