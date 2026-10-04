@@ -117,7 +117,7 @@ to. A competitor's lifetime points are the total across all their songs.
 | Field | Source | Notes |
 |---|---|---|
 | Lead artist | Deezer's main artist for the matched track | Falls back to the first artist in the export (split on ", ") when Deezer doesn't have the song. |
-| Genre | MusicBrainz: the top genre of the original recording, else its album, else its artist. Falls back to Deezer's album genre. | MusicBrainz genres are fine-grained (Indie Rock, Post-Punk, Doo-Wop). Deezer fallbacks are renamed to the matching MusicBrainz genre where they overlap ("Alternative" → "Alternative Rock"). The song-info file's Genre Source column says which source was used. On the Stats tab, single-song genres are grouped as "Other". |
+| Genre | MusicBrainz: the top genre of the original recording, else its album, else its artist. Falls back to Deezer's album genre. | MusicBrainz genres are fine-grained (Indie Rock, Post-Punk, Doo-Wop). Deezer fallbacks are renamed to the matching MusicBrainz genre where they overlap ("Alternative" → "Alternative Rock"). The song-info file's Genre Source column says which source was used. |
 | Year | Earliest of MusicBrainz's first release, the recording's ISRC year code and the Deezer album date | Remasters and compilations still show the original year. Right for the large majority of songs, not all. |
 
 Matching is strict for both sources: a result is used only when both the

@@ -81,8 +81,6 @@ zip's rounds change.
   genre is used instead, renamed to the matching MusicBrainz genre where they
   overlap (e.g. Deezer's "Alternative" shows as "Alternative Rock", "Electro"
   as "Electronic"). Songs neither source has show as *Unknown*.
-- On the **Stats** tab, genres with only one song are grouped into an
-  **Other** row. The Songs tab still shows every song's own genre.
 - **Year** is the earliest release of that recording found in MusicBrainz or
   Deezer, so remasters and compilations still show the original year. It's
   right for the large majority of songs but not all of them.

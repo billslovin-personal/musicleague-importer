@@ -730,20 +730,6 @@ function buildLeagueTables(datasets, songInfo) {
   var byGenre = breakdown(function (s) {
     return s.genre || (s.lookedUp ? UNKNOWN : NOT_YET);
   }, function (a, b) { return lastIfUnknown(a, b) || b[1] - a[1] || ciCompare_(a[0], b[0]); });
-
-  // Genres with a single song are grouped into one "Other" row (shown above Unknown).
-  var OTHER = 'Other', other = { n: 0, pts: 0 };
-  byGenre = byGenre.filter(function (g) {
-    if (g[1] !== 1 || g[0] === UNKNOWN || g[0] === NOT_YET) return true;
-    other.n++;
-    other.pts += g[3];
-    return false;
-  });
-  if (other.n) {
-    var otherRow = [OTHER, other.n, other.n / songs.length, Math.round(other.pts / other.n * 100) / 100];
-    var at = byGenre.findIndex(function (g) { return g[0] === UNKNOWN || g[0] === NOT_YET; });
-    byGenre.splice(at < 0 ? byGenre.length : at, 0, otherRow);
-  }
   var byDecade = breakdown(function (s) {
     return s.year ? Math.floor(s.year / 10) * 10 + 's' : (s.lookedUp ? UNKNOWN : NOT_YET);
   }, function (a, b) { return lastIfUnknown(a, b) || ciCompare_(a[0], b[0]); });
