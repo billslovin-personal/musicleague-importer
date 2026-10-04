@@ -26,7 +26,7 @@ var RAW = {
   votes: { sheet: 'raw_votes', cols: ['Spotify URI', 'Voter ID', 'Points Assigned', 'Round ID'] }
 };
 var SETTINGS_SHEET = 'settings';
-// Looked-up genre/year per song, keyed by Spotify URI. Not cleared by "Clear all".
+// Looked-up genre/year per song, keyed by Spotify URI.
 var SONG_INFO = { sheet: 'raw_song_info', cols: ['Spotify URI', 'Artist', 'Title', 'Genre', 'Year', 'Looked Up'] };
 var LOOKUP_TIME_BUDGET_MS = 4.5 * 60 * 1000; // Apps Script stops scripts at 6 minutes
 
@@ -40,7 +40,8 @@ function onOpen() {
     .addItem('Rebuild tabs', 'rebuildFromStoredData')
     .addSeparator()
     .addItem('Set league name…', 'setLeagueName')
-    .addItem('Clear all stored data…', 'clearAllData')
+    .addSeparator()
+    .addItem('Start a new league (erase everything)…', 'startNewLeague')
     .addToUi();
 }
 
@@ -59,14 +60,32 @@ function setLeagueName() {
   rebuildFromStoredData();
 }
 
-function clearAllData() {
+/** Erases all league data, looked-up song info and settings, leaving empty tabs. */
+function startNewLeague() {
   var ui = SpreadsheetApp.getUi();
-  var ok = ui.alert('Clear all stored data?',
-    'This removes every uploaded season from this sheet. You would need to upload the zips again.',
+  var ok = ui.alert('Erase everything and start a new league?',
+    'This permanently deletes ALL songs, rounds, votes, points, stats, looked-up genres/years ' +
+    'and the league name from this spreadsheet.\n\n' +
+    'Tip: make a backup first with File → Make a copy.\n\nThis cannot be undone. Continue?',
     ui.ButtonSet.YES_NO);
   if (ok !== ui.Button.YES) return;
-  Object.keys(RAW).forEach(function (k) { writeRaw_(RAW[k], []); });
-  rebuildFromStoredData();
+
+  var ss = SpreadsheetApp.getActive();
+  var hidden = Object.keys(RAW).map(function (k) { return RAW[k].sheet; })
+    .concat([SONG_INFO.sheet, SETTINGS_SHEET]);
+  hidden.forEach(function (name) {
+    var sh = ss.getSheetByName(name);
+    if (sh) ss.deleteSheet(sh);
+  });
+  rebuildFromStoredData(); // leaves empty Songs / Rounds / Points / Stats tabs
+
+  var res = ui.prompt('New league name',
+    'Everything has been erased. Enter the name of the new league:', ui.ButtonSet.OK_CANCEL);
+  if (res.getSelectedButton() === ui.Button.OK && res.getResponseText().trim()) {
+    settingsSheet_().getRange('B1').setValue(res.getResponseText().trim());
+  }
+  ui.alert('Ready for "' + getLeagueName_() + '". Upload the new league\'s zip files with ' +
+    'Music League → Upload zip files…');
 }
 
 // ---- Upload / rebuild ----------------------------------------------------

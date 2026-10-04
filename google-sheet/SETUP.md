@@ -70,7 +70,12 @@ After the first import you can delete the empty **Sheet1** tab.
 - **Set league name…:** the name shown in the League column of the Rounds
   tab. It defaults to "MFFL VIII".
 - **Rebuild tabs:** regenerates Songs/Rounds/Points from the stored data.
-- **Clear all stored data…:** wipes everything so you can start over.
+- **Start a new league (erase everything)…:** for when a brand-new league
+  begins. After you confirm, it permanently deletes all songs, rounds, votes,
+  points, stats, looked-up genres/years and the league name, then asks for the
+  new league's name. It only touches the tabs this script creates; any tabs you
+  added yourself are left alone. Consider **File → Make a copy** first to keep
+  the old league's sheet.
 
 ## Sharing with the league
 
