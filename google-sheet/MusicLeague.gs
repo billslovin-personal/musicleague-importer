@@ -734,7 +734,10 @@ function buildLeagueTables(datasets, songInfo) {
     return s.year ? Math.floor(s.year / 10) * 10 + 's' : (s.lookedUp ? UNKNOWN : NOT_YET);
   }, function (a, b) { return lastIfUnknown(a, b) || ciCompare_(a[0], b[0]); });
 
+  var taste = buildTaste_(songs, byGenre, byDecade, [UNKNOWN, NOT_YET]);
+
   return {
+    taste: taste,
     songs: songs.map(function (s) { return [s.lead, s.title, s.album, s.competitor, s.points, s.round, s.genre, s.year]; }),
     byGenre: byGenre,
     byDecade: byDecade,
@@ -757,6 +760,49 @@ function buildLeagueTables(datasets, songInfo) {
       submissions: Array.from(submissions.values()),
       votes: Array.from(votes.values())
     }
+  };
+}
+
+var TASTE_TOP_GENRES = 12; // league-wide genres shown as columns on the Taste tab
+
+/**
+ * Pivot of each competitor's songs by decade and by the league's most common
+ * genres (as a share of that competitor's songs), plus their own top genres
+ * and year range. Competitors are listed alphabetically.
+ */
+function buildTaste_(songs, byGenre, byDecade, unknownLabels) {
+  function known(label) { return unknownLabels.indexOf(label) < 0; }
+  var decades = byDecade.map(function (d) { return d[0]; }).filter(known);
+  var genres = byGenre.map(function (g) { return g[0]; }).filter(known).slice(0, TASTE_TOP_GENRES);
+
+  var people = new Map();
+  songs.forEach(function (s) {
+    var p = people.get(s.submitterId) || { name: s.competitor, songs: 0, years: [], genres: new Map(), decades: new Map() };
+    p.songs++;
+    if (s.year) {
+      p.years.push(s.year);
+      var d = Math.floor(s.year / 10) * 10 + 's';
+      p.decades.set(d, (p.decades.get(d) || 0) + 1);
+    }
+    if (s.genre) p.genres.set(s.genre, (p.genres.get(s.genre) || 0) + 1);
+    people.set(s.submitterId, p);
+  });
+
+  var rows = Array.from(people.values()).sort(function (a, b) { return ciCompare_(a.name, b.name); }).map(function (p) {
+    var top = Array.from(p.genres.entries()).sort(function (a, b) { return b[1] - a[1] || ciCompare_(a[0], b[0]); })
+      .slice(0, 3).map(function (e) { return e[0] + ' (' + e[1] + ')'; }).join(', ');
+    var avg = p.years.length ? Math.round(p.years.reduce(function (a, b) { return a + b; }, 0) / p.years.length) : '';
+    return [p.name, p.songs, avg,
+      p.years.length ? Math.min.apply(null, p.years) : '', p.years.length ? Math.max.apply(null, p.years) : '', top]
+      .concat(decades.map(function (d) { return (p.decades.get(d) || 0) / p.songs; }))
+      .concat(genres.map(function (g) { return (p.genres.get(g) || 0) / p.songs; }));
+  });
+
+  return {
+    summaryHeaders: ['Competitor', 'Songs', 'Avg Year', 'Oldest', 'Newest', 'Top Genres'],
+    decades: decades,
+    genres: genres,
+    rows: rows
   };
 }
 
@@ -892,8 +938,10 @@ function writeSheets_(ss, result) {
   });
   stats.setFrozenRows(2);
 
+  writeTaste_(ss, result.taste);
+
   // Put the tabs first, in order.
-  ['Songs', 'Rounds', 'Points', 'Artists', 'Stats'].forEach(function (name, i) {
+  ['Songs', 'Rounds', 'Points', 'Artists', 'Stats', 'Taste'].forEach(function (name, i) {
     ss.setActiveSheet(ss.getSheetByName(name));
     ss.moveActiveSheet(i + 1);
   });
@@ -922,6 +970,43 @@ function writeTable_(ss, name, title, headers, widths, rows) {
   sh.setFrozenRows(2);
   sh.getRange(2, 1, rows.length + 1, cols).createFilter();
   return sh;
+}
+
+/**
+ * Taste tab: one row per competitor. A summary section, then the share of
+ * their songs by decade and by the league's top genres, each with a color scale.
+ */
+function writeTaste_(ss, taste) {
+  var sh = ss.getSheetByName('Taste') || ss.insertSheet('Taste');
+  sh.clear();
+  sh.setConditionalFormatRules([]);
+  sh.getRange(1, 1, sh.getMaxRows(), sh.getMaxColumns()).breakApart();
+
+  var nSummary = taste.summaryHeaders.length, nDec = taste.decades.length, nGen = taste.genres.length;
+  var needCols = nSummary + nDec + nGen, needRows = taste.rows.length + 2;
+  if (sh.getMaxColumns() < needCols) sh.insertColumnsAfter(sh.getMaxColumns(), needCols - sh.getMaxColumns());
+  if (sh.getMaxRows() < needRows) sh.insertRowsAfter(sh.getMaxRows(), needRows - sh.getMaxRows());
+
+  function slice(from, n) { return taste.rows.map(function (r) { return r.slice(from, from + n); }); }
+  var pct = '0%;-0%;'; // blank instead of 0%
+  writeBlock_(sh, 1, 'Competitor Taste', taste.summaryHeaders, slice(0, nSummary));
+  var rules = [];
+  [[nSummary + 1, '% of Their Songs by Decade', taste.decades],
+   [nSummary + nDec + 1, '% of Their Songs in the League\'s Top Genres', taste.genres]].forEach(function (b) {
+    if (!b[2].length) return;
+    writeBlock_(sh, b[0], b[1], b[2], slice(b[0] - 1, b[2].length), b[2].map(function () { return pct; }));
+    if (taste.rows.length) {
+      rules.push(SpreadsheetApp.newConditionalFormatRule()
+        .setGradientMinpoint('#ffffff').setGradientMaxpoint('#57bb8a')
+        .setRanges([sh.getRange(3, b[0], taste.rows.length, b[2].length)]).build());
+    }
+  });
+  sh.setConditionalFormatRules(rules);
+
+  [150, 60, 75, 65, 65, 320].forEach(function (w, i) { sh.setColumnWidth(i + 1, w); });
+  for (var c = nSummary + 1; c <= needCols; c++) sh.setColumnWidth(c, 80);
+  sh.setFrozenRows(2);
+  sh.setFrozenColumns(1);
 }
 
 /** Writes a titled table starting at column `col`; `formats` are per-column number formats. */

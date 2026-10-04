@@ -11,7 +11,7 @@ There are two ways to use it:
 | Where | [`google-sheet/`](google-sheet/) | [`excel/`](excel/) |
 | Who runs it | Anyone with the sheet open, from a menu | Someone with Node.js installed |
 | Sharing | Share the sheet link with the league | Send the `.xlsx` file around |
-| Tabs | Songs, Rounds, Points, Artists, Stats | Songs, Rounds, Points |
+| Tabs | Songs, Rounds, Points, Artists, Stats, Taste | Songs, Rounds, Points |
 | Genre, year & lead artist lookup | Yes | No |
 
 ## Files
@@ -62,6 +62,9 @@ APIs.
 - **Stats:** all-time top 25 songs, each competitor's biggest fan (who has
   given them the most points), and the share of songs and average points by
   genre and by decade recorded.
+- **Taste:** a pivot of each competitor's songs: average/oldest/newest year,
+  their top 3 genres, and the share of their songs by decade and by the
+  league's 12 most common genres, with a color scale.
 
 ## Local Excel file
 

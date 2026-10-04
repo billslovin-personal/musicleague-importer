@@ -1,6 +1,6 @@
 # Music League Google Sheet — Setup
 
-This turns a Google Sheet into the league's master spreadsheet with five tabs:
+This turns a Google Sheet into the league's master spreadsheet with six tabs:
 
 - **Songs:** every submission with its lead artist, points, round, genre and
   year.
@@ -14,6 +14,9 @@ This turns a Google Sheet into the league's master spreadsheet with five tabs:
 - **Stats:** the all-time top 25 songs, each competitor's biggest fan (who has
   given them the most points), and the share of songs and average points by
   genre and by decade recorded.
+- **Taste:** one row per competitor with their songs, average/oldest/newest
+  song year and top 3 genres, plus the share of their songs from each decade
+  and in each of the league's 12 most common genres (color-scaled).
 
 You upload the Music League export zip files from a menu inside the sheet;
 everything else is automatic.
