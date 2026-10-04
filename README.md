@@ -2,147 +2,35 @@
 
 Turns the zip exports from [Music League](https://musicleague.com) into a
 league spreadsheet that de-duplicates everything and keeps lifetime stats
-across seasons.
+across seasons. There are two versions, each with its own instructions:
 
-There are two ways to use it:
-
-| | Google Sheet (recommended) | Local Excel file |
+| | [Google Sheet](google-sheet/) (recommended) | [Excel file](excel/) |
 |---|---|---|
-| Where | [`google-sheet/`](google-sheet/) | [`excel/`](excel/) |
+| Instructions | [`google-sheet/README.md`](google-sheet/README.md) | [`excel/README.md`](excel/README.md) |
 | Who runs it | Anyone with the sheet open, from a menu | Someone with Node.js installed |
 | Sharing | Share the sheet link with the league | Send the `.xlsx` file around |
 | Tabs | Songs, Rounds, Points, Artists, Stats, Taste | Songs, Rounds, Points |
-| Genre, year & lead artist lookup | Yes | No |
+| Genre, year & lead artist lookup | Yes (MusicBrainz and Deezer) | No |
 
 ## Files
 
 | Path | What it is |
 |---|---|
-| [`google-sheet/MusicLeague.gs`](google-sheet/MusicLeague.gs) | The Google Apps Script. Paste it into the sheet's script editor. |
-| [`google-sheet/SETUP.md`](google-sheet/SETUP.md) | Step-by-step setup and weekly instructions for the Google Sheet. |
-| [`google-sheet/song-info.csv`](google-sheet/song-info.csv) | Genre, year and lead artist already looked up for every song in the existing exports. Upload it on the first import to skip a few hours of lookups. |
-| [`excel/build-league-sheet.js`](excel/build-league-sheet.js) | The local Node.js script that writes an Excel file (with its `package.json`). |
-
-## Google Sheet
-
-A Google Apps Script that adds a **Music League** menu to a Google Sheet:
-
-- **Upload zip files…:** import one or more Music League exports, plus
-  optionally `song-info.csv`. Already imported data is skipped, so each week
-  you only need to upload the new zip.
-- **Look up genres & years:** fill in genre, year and lead artist for songs
-  that don't have them yet. Each run stops after about 4½ minutes (Google's
-  limit) and picks up where it left off next time.
-- **Rebuild tabs:** regenerate the tabs from the stored data.
-- **League name…:** label uploads with the zip's file name (default) or a name
-  you enter; the choice is saved with the sheet.
-- **Start a new league (erase everything)…:** wipe the sheet for a brand-new
-  league, after a confirmation.
-
-**Setup:** follow [`google-sheet/SETUP.md`](google-sheet/SETUP.md). It takes
-about 5 minutes and needs no installs.
-
-**Each week:** download the new export from Music League, rename it to the
-league's name (e.g. `MFFL VIII.zip`), upload it, then run **Look up genres &
-years**.
-
-**Permissions:** the script uses `@OnlyCurrentDoc`, so it can only access its
-own spreadsheet, not the rest of your Google Drive. The lookup sends each
-song's artist and title (nothing else) to the public Deezer and MusicBrainz
-APIs.
-
-### What's in the tabs
-
-- **Songs:** every submission with its lead artist, title, album, competitor,
-  points, round, genre and year, plus league totals (unique artist credits,
-  songs, submissions, rounds, competitors and genres).
-- **Rounds:** every round with its description, playlist link and league name.
-- **Points:** lifetime points per competitor, songs submitted, average points
-  per song, round wins and top-3 finishes.
-- **Artists:** running total of songs submitted per lead artist (the same
-  artist shown on the Songs tab), with the last round each was used in. Useful
-  for rounds with "artist used only once" rules.
-- **Stats:** all-time top 25 songs, each competitor's biggest fan (who has
-  given them the most points), and the share of songs and average points by
-  genre and by decade recorded.
-- **Taste:** a pivot of each competitor's songs: average/oldest/newest year,
-  their top 3 genres, and the share of their songs by decade and by the
-  league's 12 most common genres, with a color scale.
-
-## Local Excel file
-
-Requires [Node.js](https://nodejs.org) 18 or newer. Install its packages once,
-from the repository folder:
-
-```bash
-npm --prefix excel install
-```
-
-Then, from the folder holding your export zip files (for example the
-repository folder itself), run the command below. It reads every `.zip` in
-that folder.
-
-```bash
-node excel/build-league-sheet.js
-```
-
-This writes `Music League.xlsx` into that folder with the Songs, Rounds and
-Points tabs. You can pass a different output path as an argument. It doesn't do the genre/year/lead
-artist lookup, so its Songs tab shows the full artist credit from the export.
-
-## How the data is combined
-
-Each Music League export holds `competitors.csv`, `rounds.csv`,
-`submissions.csv` and `votes.csv`. Records from all exports are merged and
-de-duplicated, so zips can be uploaded in any order and uploading one twice is
-safe:
-
-| Record | Matched by |
-|---|---|
-| Competitor | ID. The name comes from the export with the newest rounds, so upload order doesn't matter. |
-| Round | Round ID |
-| Song submission | Round ID + Spotify URI |
-| Vote | Round ID + Spotify URI + voter ID |
-
-**League name:** exports don't include it, so the zip's file name (without
-".zip") is the league name: `MFFL VIII.zip` → **MFFL VIII**. In the Google
-Sheet, **League name…** can switch uploads to a fixed name you enter instead.
-Each zip's rounds keep the name they were uploaded with; re-upload a zip to
-change it.
-
-**Points:** a song's points are the votes it got in the round it was submitted
-to. A competitor's lifetime points are the total across all their songs.
-
-**Ties** follow Music League's tie-breakers:
-- *Round placings* (wins, top-3): points, then the most unique voters who gave
-  the song points, then the highest single vote. Songs still tied share the
-  place, and each counts as a win.
-- *Points tab order:* total points, then the most unique voters who have given
-  the competitor points across all rounds.
-
-## Genre, year and lead artist (Google Sheet)
-
-| Field | Source | Notes |
-|---|---|---|
-| Lead artist | Deezer's main artist for the matched track | Falls back to the first artist in the export (split on ", ") when Deezer doesn't have the song. |
-| Genre | MusicBrainz: the top genre of the original recording, else its album, else its artist. Falls back to Deezer's album genre. | MusicBrainz genres are fine-grained (Indie Rock, Post-Punk, Doo-Wop). Deezer fallbacks are renamed to the matching MusicBrainz genre where they overlap ("Alternative" → "Alternative Rock"). The song-info file's Genre Source column says which source was used. |
-| Year | Earliest of MusicBrainz's first release, the recording's ISRC year code and the Deezer album date | Remasters and compilations still show the original year. Right for the large majority of songs, not all. |
-
-Matching is strict for both sources: a result is used only when both the
-artist and the title match, so covers, karaoke versions and tribute acts are
-skipped.
+| [`google-sheet/MusicLeague.gs`](google-sheet/MusicLeague.gs) | The Google Apps Script, pasted into the sheet's script editor. |
+| [`google-sheet/song-info.csv`](google-sheet/song-info.csv) | Genre, year and lead artist already looked up for every song in the existing exports, uploaded on the first import. |
+| [`excel/build-league-sheet.js`](excel/build-league-sheet.js) | The Node.js script that writes the Excel file (with its `package.json`). |
 
 ## Status
 
 The data processing, lookups and stats are tested locally against eight
-seasons of exports. The Google Sheet parts (menus, upload dialog, formatting,
-and the lookup running from Google's servers) haven't been run inside Google
-Sheets yet. In particular, MusicBrainz sometimes limits requests from Google's
-servers; if years stop appearing for new songs, that's the likely cause.
+seasons of exports, and the Google Sheet has been run in Google Sheets. The
+genre/year lookup running from Google's servers is the least-tested part:
+MusicBrainz sometimes limits requests from Google, so lookups may need
+re-running.
 
 ## Privacy
 
 Export files and generated spreadsheets contain league members' names, IDs and
-comments. `.gitignore` keeps `*.zip` and `*.xlsx` files out of this repository.
-Don't commit them. `song-info.csv` holds only song IDs, artists, titles,
-genres and years.
+comments. `.gitignore` keeps `*.zip` and `*.xlsx` files out of this repository;
+don't commit them. `song-info.csv` holds only song IDs, artists, titles,
+genres, years and genre sources.

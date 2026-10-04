@@ -13,7 +13,7 @@
  * "Look up genres & years" also calls the public Deezer and MusicBrainz APIs
  * with each song's artist and title (nothing else is sent).
  *
- * Setup: see SETUP.md.
+ * Setup: see README.md in the google-sheet folder.
  */
 
 // League name used if a zip's file name is somehow empty (see leagueFromFileName_).
