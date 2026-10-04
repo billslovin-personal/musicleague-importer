@@ -14,13 +14,21 @@ const { parse } = require('csv-parse/sync');
 const ExcelJS = require('exceljs');
 
 // ---- Configuration -------------------------------------------------------
-const LEAGUE_NAME = 'MFFL VIII';           // Not present in the export files
+const DEFAULT_LEAGUE_NAME = 'Music League'; // when a zip's name has no "-"
 const INPUT_DIR = __dirname;
 const ZIP_PATTERN = /^export-.*\.zip$/i;
-const OUTPUT_FILE = process.argv[2] || path.join(INPUT_DIR, `${LEAGUE_NAME} Music League.xlsx`);
+const OUTPUT_FILE = process.argv[2] || path.join(INPUT_DIR, 'Music League.xlsx');
 // --------------------------------------------------------------------------
 
 const clean = (v) => (v == null ? '' : String(v).replace(/^﻿/, '').trim());
+
+// League name from a zip's file name: the text after the first "-",
+// e.g. "export-MFFL VIII.zip" -> "MFFL VIII". The exports don't include it.
+function leagueFromFileName(fileName) {
+  const base = path.basename(fileName).replace(/\.zip$/i, '').replace(/\s*\(\d+\)$/, '');
+  const dash = base.indexOf('-');
+  return (dash < 0 ? '' : base.slice(dash + 1).trim()) || DEFAULT_LEAGUE_NAME;
+}
 
 async function readZip(file) {
   const zip = await JSZip.loadAsync(fs.readFileSync(file));
@@ -69,6 +77,7 @@ async function main() {
         name: clean(r.Name),
         description: clean(r.Description),
         playlist: clean(r['Playlist URL']),
+        league: leagueFromFileName(z),
         source: existing ? existing.source : z,
       });
     }
@@ -184,7 +193,7 @@ async function main() {
     ['Name', 'Description', 'Playlist URL', 'League'],
     [40, 70, 55, 14],
     roundRows.map((r) => [r.name, r.description,
-      r.playlist ? { text: r.playlist, hyperlink: r.playlist } : '', LEAGUE_NAME]));
+      r.playlist ? { text: r.playlist, hyperlink: r.playlist } : '', r.league]));
   roundsWs.getColumn(3).eachCell((cell, rowNum) => {
     if (rowNum > 2 && cell.value) cell.font = { ...font, color: { argb: 'FF1155CC' }, underline: true };
   });

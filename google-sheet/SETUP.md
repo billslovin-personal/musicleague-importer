@@ -54,8 +54,17 @@ free public music databases, Deezer and MusicBrainz.
 
 After the first import you can delete the empty **Sheet1** tab.
 
+### Naming the zip files (league name)
+Music League's exports don't include the league's name, so it comes from the
+zip's file name: everything after the first "-". Rename each export before
+uploading, e.g. `export-MFFL VIII.zip` shows as **MFFL VIII** in the League
+column of the Rounds tab. A file with no "-" in its name shows as **Music
+League**. To fix a name later, rename the zip and upload it again; only that
+zip's rounds change.
+
 ### Each new week / season
-1. Download the new export zip from Music League and upload it the same way.
+1. Download the new export zip from Music League, name it as above, and upload
+   it the same way.
    Uploading only the new zip is enough because earlier data is kept.
    Uploading a zip again is safe, since duplicates are removed automatically.
 2. Click **Music League → Look up genres & years** to fill in the new songs.
@@ -76,15 +85,12 @@ After the first import you can delete the empty **Sheet1** tab.
 
 ## Other menu items
 
-- **Set league name…:** the name shown in the League column of the Rounds
-  tab. It defaults to "MFFL VIII".
-- **Rebuild tabs:** regenerates Songs/Rounds/Points from the stored data.
+- **Rebuild tabs:** regenerates all the tabs from the stored data.
 - **Start a new league (erase everything)…:** for when a brand-new league
   begins. After you confirm, it permanently deletes all songs, rounds, votes,
-  points, stats, looked-up genres/years and the league name, then asks for the
-  new league's name. It only touches the tabs this script creates; any tabs you
-  added yourself are left alone. Consider **File → Make a copy** first to keep
-  the old league's sheet.
+  points, stats and looked-up genres/years. It only touches the tabs this
+  script creates; any tabs you added yourself are left alone. Consider
+  **File → Make a copy** first to keep the old league's sheet.
 
 ## Sharing with the league
 

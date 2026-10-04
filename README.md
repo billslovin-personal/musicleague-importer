@@ -22,7 +22,6 @@ A Google Apps Script that adds a **Music League** menu to a Google Sheet:
   imported data is skipped, so each week you only need to upload the new zip.
 - **Look up genres & years:** fill in genre and year for new songs.
 - **Rebuild tabs:** regenerate the tabs from the stored data.
-- **Set league name…:** the name shown on the Rounds tab.
 - **Start a new league (erase everything)…:** wipe the sheet for a brand-new
   league, after a confirmation.
 
@@ -60,8 +59,8 @@ Put the `export-*.zip` files in this folder, then:
 node build-league-sheet.js
 ```
 
-This writes `MFFL VIII Music League.xlsx`. You can pass a different output path
-as an argument. The league name is set by `LEAGUE_NAME` at the top of the script.
+This writes `Music League.xlsx`. You can pass a different output path as an
+argument.
 
 ## How the data is combined
 
@@ -76,8 +75,12 @@ de-duplicated:
 | Song submission | Round ID + Spotify URI |
 | Vote | Round ID + Spotify URI + voter ID |
 
-A song's points are the votes it got in the round it was submitted to. Exports
-don't include the league name, so it's configured separately.
+A song's points are the votes it got in the round it was submitted to.
+
+**League name:** exports don't include it, so it comes from the zip's file
+name, everything after the first "-": `export-MFFL VIII.zip` → **MFFL VIII**.
+A file name without a "-" gives **Music League**. Each zip's rounds keep the
+name of the file they came from.
 
 ## Privacy
 

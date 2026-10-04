@@ -16,16 +16,16 @@
  * Setup: see SETUP.md.
  */
 
-var DEFAULT_LEAGUE_NAME = 'MFFL VIII';
+// League name used when a zip's file name has no "-" (see leagueFromFileName_).
+var DEFAULT_LEAGUE_NAME = 'Music League';
 
 // Hidden tabs that hold the de-duplicated raw export data.
 var RAW = {
   competitors: { sheet: 'raw_competitors', cols: ['ID', 'Name', 'Name As Of'] },
-  rounds: { sheet: 'raw_rounds', cols: ['ID', 'Created', 'Name', 'Description', 'Playlist URL'] },
+  rounds: { sheet: 'raw_rounds', cols: ['ID', 'Created', 'Name', 'Description', 'Playlist URL', 'League'] },
   submissions: { sheet: 'raw_submissions', cols: ['Spotify URI', 'Title', 'Album', 'Artist(s)', 'Submitter ID', 'Round ID'] },
   votes: { sheet: 'raw_votes', cols: ['Spotify URI', 'Voter ID', 'Points Assigned', 'Round ID'] }
 };
-var SETTINGS_SHEET = 'settings';
 // Looked-up genre/year per song, keyed by Spotify URI.
 var SONG_INFO = { sheet: 'raw_song_info', cols: ['Spotify URI', 'Artist', 'Title', 'Genre', 'Year', 'Looked Up', 'Lead Artist'] };
 var LOOKUP_TIME_BUDGET_MS = 4.5 * 60 * 1000; // Apps Script stops scripts at 6 minutes
@@ -39,8 +39,6 @@ function onOpen() {
     .addItem('Look up genres & years', 'lookUpGenresAndYears')
     .addItem('Rebuild tabs', 'rebuildFromStoredData')
     .addSeparator()
-    .addItem('Set league name…', 'setLeagueName')
-    .addSeparator()
     .addItem('Start a new league (erase everything)…', 'startNewLeague')
     .addToUi();
 }
@@ -50,42 +48,26 @@ function showUploadDialog() {
   SpreadsheetApp.getUi().showModalDialog(html, 'Upload Music League export zips');
 }
 
-function setLeagueName() {
-  var ui = SpreadsheetApp.getUi();
-  var res = ui.prompt('League name',
-    'Current: ' + getLeagueName_() + '\n\nEnter the league name to show on the Rounds tab:',
-    ui.ButtonSet.OK_CANCEL);
-  if (res.getSelectedButton() !== ui.Button.OK || !res.getResponseText().trim()) return;
-  settingsSheet_().getRange('B1').setValue(res.getResponseText().trim());
-  rebuildFromStoredData();
-}
-
-/** Erases all league data, looked-up song info and settings, leaving empty tabs. */
+/** Erases all league data and looked-up song info, leaving empty tabs. */
 function startNewLeague() {
   var ui = SpreadsheetApp.getUi();
   var ok = ui.alert('Erase everything and start a new league?',
-    'This permanently deletes ALL songs, rounds, votes, points, stats, looked-up genres/years ' +
-    'and the league name from this spreadsheet.\n\n' +
+    'This permanently deletes ALL songs, rounds, votes, points, stats and looked-up ' +
+    'genres/years from this spreadsheet.\n\n' +
     'Tip: make a backup first with File → Make a copy.\n\nThis cannot be undone. Continue?',
     ui.ButtonSet.YES_NO);
   if (ok !== ui.Button.YES) return;
 
   var ss = SpreadsheetApp.getActive();
-  var hidden = Object.keys(RAW).map(function (k) { return RAW[k].sheet; })
-    .concat([SONG_INFO.sheet, SETTINGS_SHEET]);
+  var hidden = Object.keys(RAW).map(function (k) { return RAW[k].sheet; }).concat([SONG_INFO.sheet]);
   hidden.forEach(function (name) {
     var sh = ss.getSheetByName(name);
     if (sh) ss.deleteSheet(sh);
   });
-  rebuildFromStoredData(); // leaves empty Songs / Rounds / Points / Stats tabs
+  rebuildFromStoredData(); // leaves empty tabs
 
-  var res = ui.prompt('New league name',
-    'Everything has been erased. Enter the name of the new league:', ui.ButtonSet.OK_CANCEL);
-  if (res.getSelectedButton() === ui.Button.OK && res.getResponseText().trim()) {
-    settingsSheet_().getRange('B1').setValue(res.getResponseText().trim());
-  }
-  ui.alert('Ready for "' + getLeagueName_() + '". Upload the new league\'s zip files with ' +
-    'Music League → Upload zip files…');
+  ui.alert('Everything has been erased. Upload the new league\'s zip files with ' +
+    'Music League → Upload zip files… (name each zip "export-<League name>.zip").');
 }
 
 // ---- Upload / rebuild ----------------------------------------------------
@@ -108,7 +90,7 @@ function importZips(files) {
     var blob = Utilities.newBlob(Utilities.base64Decode(f.data), 'application/zip', f.name);
     datasets.push(readZip_(blob, f.name));
   });
-  var result = buildLeagueTables(datasets, getLeagueName_(), readSongInfo_());
+  var result = buildLeagueTables(datasets, readSongInfo_());
   saveRaw_(result.raw);
   writeSheets_(SpreadsheetApp.getActive(), result);
   var missing = result.songsMissingInfo.length;
@@ -117,7 +99,7 @@ function importZips(files) {
 }
 
 function rebuildFromStoredData() {
-  var result = buildLeagueTables([readStoredData_()], getLeagueName_(), readSongInfo_());
+  var result = buildLeagueTables([readStoredData_()], readSongInfo_());
   writeSheets_(SpreadsheetApp.getActive(), result);
   SpreadsheetApp.getActive().toast(summary_(result, 'Tabs rebuilt.'), 'Music League', 8);
   return result;
@@ -136,7 +118,7 @@ function summary_(result, prefix) {
 function lookUpGenresAndYears() {
   var ui = SpreadsheetApp.getUi();
   var ss = SpreadsheetApp.getActive();
-  var pending = buildLeagueTables([readStoredData_()], getLeagueName_(), readSongInfo_()).songsMissingInfo;
+  var pending = buildLeagueTables([readStoredData_()], readSongInfo_()).songsMissingInfo;
   if (!pending.length) {
     ui.alert('Every song already has its genre and year looked up.');
     return;
@@ -202,7 +184,7 @@ function readSongInfo_() {
 }
 
 function readZip_(blob, name) {
-  var tables = { name: name };
+  var tables = { name: name, league: leagueFromFileName_(name) };
   Utilities.unzip(blob).forEach(function (b) {
     var m = b.getName().match(/(?:^|\/)(competitors|rounds|submissions|votes)\.csv$/i);
     if (m) tables[m[1].toLowerCase()] = parseCsvObjects(b.getDataAsString('UTF-8'));
@@ -250,20 +232,6 @@ function writeRaw_(def, rows) {
   sh.hideSheet();
 }
 
-function settingsSheet_() {
-  var ss = SpreadsheetApp.getActive();
-  var sh = ss.getSheetByName(SETTINGS_SHEET);
-  if (!sh) {
-    sh = ss.insertSheet(SETTINGS_SHEET);
-    sh.getRange('A1:B1').setValues([['League name', DEFAULT_LEAGUE_NAME]]);
-    sh.hideSheet();
-  }
-  return sh;
-}
-
-function getLeagueName_() {
-  return String(settingsSheet_().getRange('B1').getValue() || DEFAULT_LEAGUE_NAME);
-}
 
 // ---- Genre / year lookup ---------------------------------------------------
 //
@@ -447,14 +415,15 @@ function matchKey_(s) {
 // ---- Core logic (no Google services; also runnable in Node for testing) ---
 
 /**
- * @param {Array<{competitors, rounds, submissions, votes}>} datasets
+ * @param {Array<{competitors, rounds, submissions, votes, league}>} datasets
  *   In processing order; each table is an array of row objects keyed by the
  *   export's column names. Later datasets win when the same record repeats,
  *   except competitor names: the name from the export with the most recent
- *   rounds wins, so upload order doesn't matter.
- * @param {Map<string, {genre, year}>} [songInfo]  looked-up info by Spotify URI
+ *   rounds wins, so upload order doesn't matter. `league` is the league name
+ *   for a zip's rounds (stored rounds carry their own League column).
+ * @param {Map<string, {genre, year, lead}>} [songInfo]  looked-up info by Spotify URI
  */
-function buildLeagueTables(datasets, leagueName, songInfo) {
+function buildLeagueTables(datasets, songInfo) {
   songInfo = songInfo || new Map();
   var competitors = new Map(); // ID -> row
   var rounds = new Map();      // Round ID -> row
@@ -479,7 +448,8 @@ function buildLeagueTables(datasets, leagueName, songInfo) {
       var id = clean_(r.ID);
       if (id) rounds.set(id, {
         'ID': id, 'Created': clean_(r.Created), 'Name': clean_(r.Name),
-        'Description': clean_(r.Description), 'Playlist URL': clean_(r['Playlist URL'])
+        'Description': clean_(r.Description), 'Playlist URL': clean_(r['Playlist URL']),
+        'League': t.league || clean_(r.League) || DEFAULT_LEAGUE_NAME
       });
     });
     t.submissions.forEach(function (s) {
@@ -671,7 +641,7 @@ function buildLeagueTables(datasets, leagueName, songInfo) {
     fans: fans,
     artistTotals: artistTotals,
     songsMissingInfo: songsMissingInfo,
-    rounds: roundList.map(function (r) { return [r.Name, r.Description, r['Playlist URL'], leagueName]; }),
+    rounds: roundList.map(function (r) { return [r.Name, r.Description, r['Playlist URL'], r.League]; }),
     points: points,
     stats: [
       ['Total Unique Artists', artists.size],
@@ -725,6 +695,18 @@ function parseCsvObjects(text) {
 }
 
 function clean_(v) { return v == null ? '' : String(v).trim(); }
+
+/**
+ * League name from a zip's file name: the text after the first "-", e.g.
+ * "export-MFFL VIII.zip" -> "MFFL VIII". A browser's duplicate-download suffix
+ * like " (1)" is dropped. No "-" (or nothing after it) -> DEFAULT_LEAGUE_NAME.
+ */
+function leagueFromFileName_(fileName) {
+  var base = String(fileName).replace(/^.*[\\\/]/, '').replace(/\.zip$/i, '').replace(/\s*\(\d+\)$/, '');
+  var dash = base.indexOf('-');
+  var league = dash < 0 ? '' : base.slice(dash + 1).trim();
+  return league || DEFAULT_LEAGUE_NAME;
+}
 
 function ciCompare_(a, b) {
   a = a.toLowerCase(); b = b.toLowerCase();
@@ -884,6 +866,6 @@ if (typeof module !== 'undefined') {
   module.exports = {
     buildLeagueTables: buildLeagueTables, parseCsvObjects: parseCsvObjects, naturalCompare_: naturalCompare_,
     lookupSongBatch_: lookupSongBatch_, baseTitle_: baseTitle_, matchKey_: matchKey_, isrcYear_: isrcYear_,
-    deezerSearchUrl_: deezerSearchUrl_, pickDeezerTrack_: pickDeezerTrack_
+    deezerSearchUrl_: deezerSearchUrl_, pickDeezerTrack_: pickDeezerTrack_, leagueFromFileName_: leagueFromFileName_
   };
 }
