@@ -1,9 +1,17 @@
 # Music League Google Sheet — Setup
 
 This turns a Google Sheet into the league's master spreadsheet with four tabs:
-**Songs**, **Rounds**, **Points**, and **Stats** (% of songs by genre and by
-decade). You upload the Music League export zip files from a menu inside the
-sheet; everything else is automatic.
+
+- **Songs:** every submission with its points, round, genre and year.
+- **Rounds:** every round with its description and playlist link.
+- **Points:** lifetime points per competitor, plus songs submitted, average
+  points per song, round wins and top-3 finishes.
+- **Stats:** the all-time top 25 songs, each competitor's biggest fan (who has
+  given them the most points), and the share of songs and average points by
+  genre and by decade recorded.
+
+You upload the Music League export zip files from a menu inside the sheet;
+everything else is automatic.
 
 **Privacy:** the script can only see and change *this one spreadsheet*. It has
 no access to anything else in your Google Drive, Gmail, etc. To find genres
@@ -79,3 +87,6 @@ Viewers can see and filter the tabs but can't change data or run the import.
   changed their display name, the name from the most recent season is used.
 - A song's points are the votes it got in the round it was submitted to.
   A competitor's lifetime points are the total across all their songs.
+- Round wins / top-3 finishes: songs tied on points share the place, so a
+  round tied for first counts as a win for everyone tied. Rounds that don't
+  have any votes yet are skipped.

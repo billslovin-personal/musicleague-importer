@@ -488,7 +488,7 @@ function buildLeagueTables(datasets, leagueName, songInfo) {
     songs.push({
       artist: s['Artist(s)'], title: s.Title, album: s.Album,
       competitor: nameOf(s['Submitter ID']), points: subPoints.get(key) || 0,
-      round: round ? round.Name : '', submitterId: s['Submitter ID'],
+      round: round ? round.Name : '', roundId: s['Round ID'], submitterId: s['Submitter ID'],
       genre: info ? info.genre : '', year: info && info.year ? info.year : '', lookedUp: !!info
     });
   });
@@ -500,12 +500,68 @@ function buildLeagueTables(datasets, leagueName, songInfo) {
     return a.Created < b.Created ? -1 : a.Created > b.Created ? 1 : 0;
   });
 
-  var totals = new Map();
-  competitors.forEach(function (_, id) { totals.set(id, 0); });
-  songs.forEach(function (s) { totals.set(s.submitterId, (totals.get(s.submitterId) || 0) + s.points); });
+  // Finishing place of every song in its round (ties share a place: 1, 1, 3).
+  // Rounds with no votes yet (still in progress) are skipped.
+  var votedRounds = new Set();
+  votes.forEach(function (v) { votedRounds.add(v['Round ID']); });
+  var placeOf = new Map(), byRound = new Map();
+  songs.forEach(function (s) {
+    if (!votedRounds.has(s.roundId)) return;
+    if (!byRound.has(s.roundId)) byRound.set(s.roundId, []);
+    byRound.get(s.roundId).push(s);
+  });
+  byRound.forEach(function (list) {
+    list.forEach(function (s) {
+      placeOf.set(s, 1 + list.filter(function (o) { return o.points > s.points; }).length);
+    });
+  });
+
+  // Per-competitor totals.
+  var comp = new Map();
+  competitors.forEach(function (_, id) { comp.set(id, { points: 0, songs: 0, wins: 0, top3: 0 }); });
+  songs.forEach(function (s) {
+    if (!comp.has(s.submitterId)) comp.set(s.submitterId, { points: 0, songs: 0, wins: 0, top3: 0 });
+    var c = comp.get(s.submitterId), place = placeOf.get(s);
+    c.points += s.points;
+    c.songs++;
+    if (place === 1) c.wins++;
+    if (place <= 3) c.top3++;
+  });
   var points = [];
-  totals.forEach(function (pts, id) { points.push([nameOf(id), pts]); });
+  comp.forEach(function (c, id) {
+    points.push([nameOf(id), c.points, c.songs, c.songs ? Math.round(c.points / c.songs * 100) / 100 : '', c.wins, c.top3]);
+  });
   points.sort(function (a, b) { return b[1] - a[1] || ciCompare_(a[0], b[0]); });
+
+  // All-time top 25 songs (ties at 25th place are all included).
+  var ranked = songs.slice().sort(function (a, b) { return b.points - a.points || ciCompare_(a.artist, b.artist); });
+  var topSongs = [], rank = 0;
+  for (var i = 0; i < ranked.length; i++) {
+    var s = ranked[i];
+    if (!i || s.points !== ranked[i - 1].points) rank = i + 1;
+    if (rank > 25) break;
+    topSongs.push([rank, s.artist, s.title, s.competitor, s.round, s.points]);
+  }
+
+  // Biggest fan: the voter who has given each competitor the most points overall.
+  var given = new Map(); // submitter ID -> Map(voter ID -> points)
+  votes.forEach(function (v) {
+    var sub = submissions.get(v['Round ID'] + '|' + v['Spotify URI']);
+    if (!sub || sub['Submitter ID'] === v['Voter ID']) return;
+    var id = sub['Submitter ID'];
+    if (!given.has(id)) given.set(id, new Map());
+    var m = given.get(id);
+    m.set(v['Voter ID'], (m.get(v['Voter ID']) || 0) + v['Points Assigned']);
+  });
+  var fans = [];
+  given.forEach(function (m, id) {
+    var best = Math.max.apply(null, Array.from(m.values()));
+    if (best <= 0) return;
+    var who = [];
+    m.forEach(function (pts, voter) { if (pts === best) who.push(nameOf(voter)); });
+    fans.push([nameOf(id), who.sort(ciCompare_).join(' & '), best]);
+  });
+  fans.sort(function (a, b) { return b[2] - a[2] || ciCompare_(a[0], b[0]); });
 
   var artists = new Set(), uniqueSongs = new Set();
   songs.forEach(function (s) {
@@ -513,16 +569,18 @@ function buildLeagueTables(datasets, leagueName, songInfo) {
     uniqueSongs.add((s.artist + '|' + s.title).toLowerCase());
   });
 
-  // Share of submissions by genre and by decade.
+  // Share of submissions and average points by genre and by decade.
   function breakdown(labelOf, order) {
-    var counts = new Map();
+    var groups = new Map();
     songs.forEach(function (s) {
-      var label = labelOf(s);
-      counts.set(label, (counts.get(label) || 0) + 1);
+      var label = labelOf(s), g = groups.get(label) || { n: 0, pts: 0 };
+      g.n++;
+      g.pts += s.points;
+      groups.set(label, g);
     });
-    return Array.from(counts.entries()).sort(order).map(function (e) {
-      return [e[0], e[1], songs.length ? e[1] / songs.length : 0];
-    });
+    return Array.from(groups.entries()).map(function (e) {
+      return [e[0], e[1].n, songs.length ? e[1].n / songs.length : 0, Math.round(e[1].pts / e[1].n * 100) / 100];
+    }).sort(order);
   }
   var NOT_YET = 'Not looked up yet', UNKNOWN = 'Unknown';
   function lastIfUnknown(a, b) {
@@ -540,6 +598,8 @@ function buildLeagueTables(datasets, leagueName, songInfo) {
     songs: songs.map(function (s) { return [s.artist, s.title, s.album, s.competitor, s.points, s.round, s.genre, s.year]; }),
     byGenre: byGenre,
     byDecade: byDecade,
+    topSongs: topSongs,
+    fans: fans,
     songsMissingInfo: songsMissingInfo,
     rounds: roundList.map(function (r) { return [r.Name, r.Description, r['Playlist URL'], leagueName]; }),
     points: points,
@@ -646,14 +706,34 @@ function writeSheets_(ss, result) {
   }
 
   writeTable_(ss, 'Points', '"Lifetime" League Points',
-    ['Competitor Name', 'Total Points'], [200, 110], result.points);
+    ['Competitor Name', 'Total Points', 'Songs', 'Avg Points / Song', 'Round Wins', 'Top 3 Finishes'],
+    [200, 100, 70, 130, 100, 120], result.points);
 
+  // Stats tab: side-by-side tables, each followed by a blank spacer column.
   var stats = ss.getSheetByName('Stats') || ss.insertSheet('Stats');
   stats.clear();
   stats.getRange(1, 1, stats.getMaxRows(), stats.getMaxColumns()).breakApart();
-  writeBlock_(stats, 1, 'Songs by Genre', ['Genre', 'Songs', '% of Songs'], result.byGenre);
-  writeBlock_(stats, 5, 'Songs by Decade Recorded', ['Decade', 'Songs', '% of Songs'], result.byDecade);
-  [160, 70, 90, 30, 160, 70, 90].forEach(function (w, i) { stats.setColumnWidth(i + 1, w); });
+  var blocks = [
+    ['All-Time Top 25 Songs', ['Rank', 'Artist(s)', 'Title', 'Competitor', 'Round', 'Points'],
+      [50, 180, 220, 130, 220, 60], result.topSongs, []],
+    ['Biggest Fans', ['Competitor', 'Biggest Fan', 'Points Given'],
+      [150, 170, 95], result.fans, []],
+    ['Songs by Genre', ['Genre', 'Songs', '% of Songs', 'Avg Points'],
+      [140, 65, 90, 85], result.byGenre, [null, null, '0.0%', '0.00']],
+    ['Songs by Decade Recorded', ['Decade', 'Songs', '% of Songs', 'Avg Points'],
+      [140, 65, 90, 85], result.byDecade, [null, null, '0.0%', '0.00']]
+  ];
+  var needCols = blocks.reduce(function (n, b) { return n + b[1].length + 1; }, 0);
+  if (stats.getMaxColumns() < needCols) stats.insertColumnsAfter(stats.getMaxColumns(), needCols - stats.getMaxColumns());
+  var needRows = 2 + Math.max.apply(null, blocks.map(function (b) { return b[3].length; }));
+  if (stats.getMaxRows() < needRows) stats.insertRowsAfter(stats.getMaxRows(), needRows - stats.getMaxRows());
+  var col = 1;
+  blocks.forEach(function (b) {
+    writeBlock_(stats, col, b[0], b[1], b[3], b[4]);
+    b[2].forEach(function (w, i) { stats.setColumnWidth(col + i, w); });
+    stats.setColumnWidth(col + b[1].length, 30);
+    col += b[1].length + 1;
+  });
   stats.setFrozenRows(2);
 
   // Put the tabs first, in order.
@@ -688,17 +768,18 @@ function writeTable_(ss, name, title, headers, widths, rows) {
   return sh;
 }
 
-/** Writes a titled count / percentage table starting at column `col`. */
-function writeBlock_(sh, col, title, headers, rows) {
+/** Writes a titled table starting at column `col`; `formats` are per-column number formats. */
+function writeBlock_(sh, col, title, headers, rows, formats) {
   var cols = headers.length;
   sh.getRange(1, col, 1, cols).merge().setValue(title)
     .setBackground(TITLE_BG).setFontColor(HEADER_FG).setFontWeight('bold').setHorizontalAlignment('center');
   sh.getRange(2, col, 1, cols).setValues([headers])
-    .setBackground(HEADER_BG).setFontColor(HEADER_FG).setFontWeight('bold');
-  if (rows.length) {
-    sh.getRange(3, col, rows.length, cols).setValues(rows);
-    sh.getRange(3, col + cols - 1, rows.length, 1).setNumberFormat('0.0%');
-  }
+    .setBackground(HEADER_BG).setFontColor(HEADER_FG).setFontWeight('bold').setWrap(true);
+  if (!rows.length) return;
+  sh.getRange(3, col, rows.length, cols).setValues(rows).setVerticalAlignment('top').setWrap(true);
+  (formats || []).forEach(function (f, i) {
+    if (f) sh.getRange(3, col + i, rows.length, 1).setNumberFormat(f);
+  });
 }
 
 // ---- Upload dialog -------------------------------------------------------
