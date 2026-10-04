@@ -1,11 +1,14 @@
 # Music League Google Sheet — Setup
 
-This turns a Google Sheet into the league's master spreadsheet with three tabs:
-**Songs**, **Rounds**, and **Points**. You upload the Music League export zip
-files from a menu inside the sheet; everything else is automatic.
+This turns a Google Sheet into the league's master spreadsheet with four tabs:
+**Songs**, **Rounds**, **Points**, and **Stats** (% of songs by genre and by
+decade). You upload the Music League export zip files from a menu inside the
+sheet; everything else is automatic.
 
 **Privacy:** the script can only see and change *this one spreadsheet*. It has
-no access to anything else in your Google Drive, Gmail, etc.
+no access to anything else in your Google Drive, Gmail, etc. To find genres
+and years, it sends each song's artist and title (nothing else) to two
+free public music databases, Deezer and MusicBrainz.
 
 ## One-time setup (about 5 minutes)
 
@@ -27,18 +30,32 @@ no access to anything else in your Google Drive, Gmail, etc.
      you wrote the script yourself and didn't publish it. Click **Advanced → Go to
      (project name) (unsafe)**.
    - The permissions listed should be only *"View and manage spreadsheets that
-     this application has been installed in"* and *"Display and run
-     third-party web content in prompts and sidebars"*. Click **Allow**.
+     this application has been installed in"*, *"Display and run third-party
+     web content in prompts and sidebars"*, and *"Connect to an external
+     service"* (used only for the genre/year lookup). Click **Allow**.
    - Then click **Music League → Upload zip files…** again.
-3. Pick one or more `export-*.zip` files (you can select several at once) and
-   click **Import**. Larger uploads can take up to a minute.
+3. Pick all the `export-*.zip` files **and** `song-info.csv` (you can select
+   several at once) and click **Import**. Larger uploads can take up to a
+   minute. `song-info.csv` holds genres and years already looked up for all
+   the existing songs, which saves about an hour of lookups.
 
 After the first import you can delete the empty **Sheet1** tab.
 
 ### Each new week / season
-Download the new export zip from Music League and upload it the same way.
-Uploading only the new zip is enough because earlier data is kept. Uploading
-a zip again is safe, since duplicates are removed automatically.
+1. Download the new export zip from Music League and upload it the same way.
+   Uploading only the new zip is enough because earlier data is kept.
+   Uploading a zip again is safe, since duplicates are removed automatically.
+2. Click **Music League → Look up genres & years** to fill in the new songs.
+   A week's songs take under a minute.
+
+### About genres and years
+- **Genre** comes from Deezer and is a broad label (Rock, Pop, Alternative,
+  Rap/Hip Hop, …). About 1 in 8 songs has no genre there and shows as *Unknown*.
+- **Year** is the earliest release of that recording found in MusicBrainz or
+  Deezer, so remasters and compilations still show the original year. It's
+  right for the large majority of songs but not all of them.
+- A lookup run stops itself after about 4½ minutes (Google's time limit). If
+  there are more songs left, it says so — just run it again to continue.
 
 ## Other menu items
 

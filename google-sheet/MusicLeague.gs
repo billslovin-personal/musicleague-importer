@@ -10,6 +10,8 @@
  *
  * Permissions: the @OnlyCurrentDoc tag above limits this script to THIS
  * spreadsheet. It never reads or writes anything else in Google Drive.
+ * "Look up genres & years" also calls the public Deezer and MusicBrainz APIs
+ * with each song's artist and title (nothing else is sent).
  *
  * Setup: see SETUP.md.
  */
@@ -24,6 +26,9 @@ var RAW = {
   votes: { sheet: 'raw_votes', cols: ['Spotify URI', 'Voter ID', 'Points Assigned', 'Round ID'] }
 };
 var SETTINGS_SHEET = 'settings';
+// Looked-up genre/year per song, keyed by Spotify URI. Not cleared by "Clear all".
+var SONG_INFO = { sheet: 'raw_song_info', cols: ['Spotify URI', 'Artist', 'Title', 'Genre', 'Year', 'Looked Up'] };
+var LOOKUP_TIME_BUDGET_MS = 4.5 * 60 * 1000; // Apps Script stops scripts at 6 minutes
 
 // ---- Menu ----------------------------------------------------------------
 
@@ -31,6 +36,7 @@ function onOpen() {
   SpreadsheetApp.getUi()
     .createMenu('Music League')
     .addItem('Upload zip files…', 'showUploadDialog')
+    .addItem('Look up genres & years', 'lookUpGenresAndYears')
     .addItem('Rebuild tabs', 'rebuildFromStoredData')
     .addSeparator()
     .addItem('Set league name…', 'setLeagueName')
@@ -70,28 +76,110 @@ function clearAllData() {
  * @param {Array<{name: string, data: string}>} files  base64-encoded zip files
  */
 function importZips(files) {
+  // A song-info .csv (from a previous lookup) fills in genres/years without looking them up again.
+  var csvs = files.filter(function (f) { return /\.csv$/i.test(f.name); });
+  files = files.filter(function (f) { return !/\.csv$/i.test(f.name); });
+  csvs.forEach(function (f) {
+    importSongInfoCsv_(Utilities.newBlob(Utilities.base64Decode(f.data)).getDataAsString('UTF-8'), f.name);
+  });
+
   files.sort(function (a, b) { return naturalCompare_(a.name, b.name); });
   var datasets = [readStoredData_()];
   files.forEach(function (f) {
     var blob = Utilities.newBlob(Utilities.base64Decode(f.data), 'application/zip', f.name);
     datasets.push(readZip_(blob, f.name));
   });
-  var result = buildLeagueTables(datasets, getLeagueName_());
+  var result = buildLeagueTables(datasets, getLeagueName_(), readSongInfo_());
   saveRaw_(result.raw);
   writeSheets_(SpreadsheetApp.getActive(), result);
-  return summary_(result, files.length + ' zip file(s) imported.');
+  var missing = result.songsMissingInfo.length;
+  return summary_(result, files.length + ' zip file(s)' + (csvs.length ? ' and song info' : '') + ' imported.') +
+    (missing ? ' Run "Look up genres & years" to fill in ' + missing + ' new song(s).' : '');
 }
 
 function rebuildFromStoredData() {
-  var result = buildLeagueTables([readStoredData_()], getLeagueName_());
+  var result = buildLeagueTables([readStoredData_()], getLeagueName_(), readSongInfo_());
   writeSheets_(SpreadsheetApp.getActive(), result);
   SpreadsheetApp.getActive().toast(summary_(result, 'Tabs rebuilt.'), 'Music League', 8);
+  return result;
 }
 
 function summary_(result, prefix) {
   var s = result.stats;
   return prefix + ' Now holding ' + s[4][1] + ' competitors, ' + s[3][1] + ' rounds, ' +
     s[2][1] + ' submissions.';
+}
+
+/**
+ * Looks up genre and year for songs that don't have them yet, for as long as
+ * Google allows one run, then rebuilds the tabs. Run again to continue.
+ */
+function lookUpGenresAndYears() {
+  var ui = SpreadsheetApp.getUi();
+  var ss = SpreadsheetApp.getActive();
+  var pending = buildLeagueTables([readStoredData_()], getLeagueName_(), readSongInfo_()).songsMissingInfo;
+  if (!pending.length) {
+    ui.alert('Every song already has its genre and year looked up.');
+    return;
+  }
+  ss.toast('Looking up ' + pending.length + ' song(s). This can take up to 5 minutes…', 'Music League', 30);
+
+  var deadline = Date.now() + LOOKUP_TIME_BUDGET_MS;
+  var sh = ss.getSheetByName(SONG_INFO.sheet);
+  if (!sh) {
+    sh = ss.insertSheet(SONG_INFO.sheet);
+    sh.getRange(1, 1, 1, SONG_INFO.cols.length).setValues([SONG_INFO.cols]);
+    sh.hideSheet();
+  }
+  var done = 0;
+  for (var i = 0; i < pending.length && Date.now() < deadline; i += 10) {
+    var rows = lookupSongBatch_(pending.slice(i, i + 10), deadline);
+    if (rows.length) {
+      // Save as we go so nothing is lost if Google stops the script.
+      sh.getRange(sh.getLastRow() + 1, 1, rows.length, SONG_INFO.cols.length)
+        .setNumberFormat('@').setValues(rows);
+      done += rows.length;
+    }
+  }
+
+  var left = rebuildFromStoredData().songsMissingInfo.length;
+  ui.alert(left
+    ? 'Looked up ' + done + ' song(s). ' + left + ' still to go — run "Look up genres & years" again to continue.'
+    : 'Done! Looked up ' + done + ' song(s). Every song now has its genre and year looked up.');
+}
+
+function importSongInfoCsv_(text, name) {
+  var rows = parseCsvObjects(text);
+  if (rows.length && !('Spotify URI' in rows[0] && 'Genre' in rows[0] && 'Year' in rows[0])) {
+    throw new Error(name + " doesn't look like a song-info file (needs Spotify URI, Genre and Year columns).");
+  }
+  var ss = SpreadsheetApp.getActive();
+  var sh = ss.getSheetByName(SONG_INFO.sheet) || ss.insertSheet(SONG_INFO.sheet);
+  var merged = new Map();
+  if (sh.getLastRow() > 1) {
+    sh.getRange(2, 1, sh.getLastRow() - 1, SONG_INFO.cols.length).getValues()
+      .forEach(function (r) { merged.set(String(r[0]), r); });
+  }
+  rows.forEach(function (o) {
+    var uri = clean_(o['Spotify URI']);
+    if (uri) merged.set(uri, SONG_INFO.cols.map(function (c) { return clean_(o[c]); }));
+  });
+  var all = [SONG_INFO.cols].concat(Array.from(merged.values()));
+  sh.clear();
+  if (sh.getMaxRows() < all.length) sh.insertRowsAfter(sh.getMaxRows(), all.length - sh.getMaxRows());
+  sh.getRange(1, 1, all.length, SONG_INFO.cols.length).setNumberFormat('@').setValues(all);
+  sh.hideSheet();
+}
+
+function readSongInfo_() {
+  var info = new Map();
+  var sh = SpreadsheetApp.getActive().getSheetByName(SONG_INFO.sheet);
+  if (sh && sh.getLastRow() > 1) {
+    sh.getRange(2, 1, sh.getLastRow() - 1, SONG_INFO.cols.length).getValues().forEach(function (r) {
+      info.set(String(r[0]), { genre: String(r[3] || ''), year: r[4] ? Number(r[4]) : null });
+    });
+  }
+  return info;
 }
 
 function readZip_(blob, name) {
@@ -158,6 +246,174 @@ function getLeagueName_() {
   return String(settingsSheet_().getRange('B1').getValue() || DEFAULT_LEAGUE_NAME);
 }
 
+// ---- Genre / year lookup ---------------------------------------------------
+//
+// Genre comes from Deezer (album genre: Rock, Pop, Alternative, ...). Year is
+// the earliest believable year from MusicBrainz (first release of any matching
+// recording), the Deezer recording's ISRC year code, and the Deezer album date,
+// because the album Spotify/Deezer link to is often a later reissue.
+
+var MB_USER_AGENT = 'MusicLeagueSheet/1.0 (Google Sheets script for a private music league)';
+
+/**
+ * Looks up up to ~10 songs. Returns rows for SONG_INFO; songs that hit a
+ * temporary error (rate limit, outage) are left out so a later run retries them.
+ * @param {Array<{uri, artist, title}>} songs
+ */
+function lookupSongBatch_(songs, deadline) {
+  var fetchOpts = { muteHttpExceptions: true };
+  function searchDeezer(list, exact) {
+    return UrlFetchApp.fetchAll(list.map(function (s) {
+      return Object.assign({ url: deezerSearchUrl_(s.artist, s.title, exact) }, fetchOpts);
+    })).map(function (res, i) {
+      var json = parseJson_(res);
+      if (!json || json.error) return { failed: true };
+      return { track: pickDeezerTrack_(json, list[i].artist, list[i].title) };
+    });
+  }
+  var tracks = searchDeezer(songs, false);
+  // Plain search can rank covers/karaoke first; retry misses with an exact artist + title search.
+  var retry = [];
+  tracks.forEach(function (t, i) { if (!t.failed && !t.track) retry.push(i); });
+  if (retry.length) {
+    searchDeezer(retry.map(function (i) { return songs[i]; }), true).forEach(function (t, j) {
+      if (t.failed || t.track) tracks[retry[j]] = t;
+    });
+  }
+
+  var albumIds = [];
+  tracks.forEach(function (t) {
+    if (t.track && albumIds.indexOf(t.track.album.id) < 0) albumIds.push(t.track.album.id);
+  });
+  var albums = {};
+  UrlFetchApp.fetchAll(albumIds.map(function (id) {
+    return Object.assign({ url: 'https://api.deezer.com/album/' + id }, fetchOpts);
+  })).forEach(function (res, i) {
+    var json = parseJson_(res);
+    albums[albumIds[i]] = json && !json.error ? json : null;
+  });
+
+  var rows = [];
+  var today = new Date().toISOString().slice(0, 10);
+  for (var i = 0; i < songs.length; i++) {
+    if (Date.now() > deadline) break;
+    var s = songs[i], t = tracks[i];
+    var started = Date.now();
+    var mb = fetchMusicBrainz_(s.artist, s.title);
+    // MusicBrainz allows about one request per second.
+    Utilities.sleep(Math.max(0, 1100 - (Date.now() - started)));
+    if (t.failed || mb.failed) continue;
+
+    var album = t.track ? albums[t.track.album.id] : null;
+    if (t.track && !album) continue; // album lookup failed; retry later
+    var year = earliestYear_([
+      mbEarliestYear_(mb.json, s.artist, s.title),
+      t.track ? isrcYear_(t.track.isrc) : null,
+      album ? parseInt(String(album.release_date || '').slice(0, 4), 10) : null
+    ]);
+    rows.push([s.uri, s.artist, s.title, album ? deezerGenre_(album) : '', year || '', today]);
+  }
+  return rows;
+}
+
+function fetchMusicBrainz_(artist, title) {
+  var opts = { muteHttpExceptions: true, headers: { 'User-Agent': MB_USER_AGENT, 'Accept': 'application/json' } };
+  for (var attempt = 0; attempt < 2; attempt++) {
+    var res = UrlFetchApp.fetch(musicBrainzUrl_(artist, title), opts);
+    if (res.getResponseCode() === 200) return { json: parseJson_(res) };
+    Utilities.sleep(2000);
+  }
+  return { failed: true };
+}
+
+function parseJson_(res) {
+  if (res.getResponseCode() !== 200) return null;
+  try { return JSON.parse(res.getContentText()); } catch (e) { return null; }
+}
+
+// Pure helpers below are shared with the Node test harness.
+
+function deezerSearchUrl_(artist, title, exact) {
+  var a = primaryArtist_(artist), t = baseTitle_(title);
+  var q = exact ? 'artist:"' + a.replace(/"/g, '') + '" track:"' + t.replace(/"/g, '') + '"' : a + ' ' + t;
+  return 'https://api.deezer.com/search?limit=25&q=' + encodeURIComponent(q);
+}
+
+function musicBrainzUrl_(artist, title) {
+  var esc = function (s) { return s.replace(/["\\]/g, '\\$&'); };
+  var q = 'recording:"' + esc(baseTitle_(title)) + '" AND artist:"' + esc(primaryArtist_(artist)) + '"';
+  return 'https://musicbrainz.org/ws/2/recording?fmt=json&limit=100&query=' + encodeURIComponent(q);
+}
+
+function pickDeezerTrack_(json, artist, title) {
+  var t = matchKey_(baseTitle_(title));
+  return (json.data || []).filter(function (x) {
+    var xt = matchKey_(baseTitle_(x.title_short || x.title || ''));
+    return x.artist && isArtist_(x.artist.name, artist) && x.album &&
+      (xt === t || xt.indexOf(t) === 0 || t.indexOf(xt) === 0);
+  })[0] || null;
+}
+
+/**
+ * Spotify joins multiple artists with commas, but some names contain one
+ * ("Tyler, The Creator"), so accept any leading run of comma-separated parts.
+ */
+function isArtist_(name, artists) {
+  var key = matchKey_(name), parts = String(artists).split(',');
+  for (var i = 1; i <= parts.length; i++) {
+    if (matchKey_(parts.slice(0, i).join(',')) === key) return true;
+  }
+  return false;
+}
+
+function deezerGenre_(album) {
+  var g = album.genres && album.genres.data && album.genres.data[0];
+  return g ? g.name : '';
+}
+
+function mbEarliestYear_(json, artist, title) {
+  if (!json) return null;
+  var t = matchKey_(baseTitle_(title));
+  var years = (json.recordings || []).filter(function (r) {
+    return matchKey_(baseTitle_(r.title || '')) === t && (r['artist-credit'] || []).some(function (c) {
+      return isArtist_(c.name || '', artist) || (c.artist && isArtist_(c.artist.name || '', artist));
+    });
+  }).map(function (r) { return parseInt(String(r['first-release-date'] || '').slice(0, 4), 10); });
+  return earliestYear_(years);
+}
+
+/** ISRCs look like CC-XXX-YY-NNNNN; YY is the year the code was assigned. */
+function isrcYear_(isrc) {
+  var m = String(isrc || '').match(/^[A-Z]{2}[A-Z0-9]{3}(\d{2})\d{5}$/i);
+  if (!m) return null;
+  var yy = Number(m[1]), nowYY = new Date().getFullYear() % 100;
+  return yy <= nowYY ? 2000 + yy : 1900 + yy;
+}
+
+function earliestYear_(years) {
+  var max = new Date().getFullYear();
+  var ok = years.filter(function (y) { return y && y >= 1900 && y <= max; });
+  return ok.length ? Math.min.apply(null, ok) : null;
+}
+
+function primaryArtist_(artists) { return String(artists).split(',')[0].trim(); }
+
+/** "Doctor My Eyes - Remastered" -> "Doctor My Eyes"; drops (Live), (feat. X), etc. */
+function baseTitle_(title) {
+  return String(title)
+    .replace(/\s+-\s+.*$/, '')
+    .replace(/\s*[\(\[][^\)\]]*(remaster|version|live|mono|stereo|edit|mix|feat|with|from)[^\)\]]*[\)\]]/ig, '')
+    .trim() || String(title).trim();
+}
+
+function matchKey_(s) {
+  var k = String(s).toLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/&/g, 'and').replace(/^the\s+/, '')
+    .replace(/[\u00a0-\u00bf\u2000-\u206f]/g, '')   // curly quotes, dashes, etc.
+    .replace(/[^a-z0-9\u00c0-\uffff]/g, '');        // keep non-Latin letters
+  return k || String(s).toLowerCase().trim();
+}
+
 // ---- Core logic (no Google services; also runnable in Node for testing) ---
 
 /**
@@ -166,8 +422,10 @@ function getLeagueName_() {
  *   export's column names. Later datasets win when the same record repeats,
  *   except competitor names: the name from the export with the most recent
  *   rounds wins, so upload order doesn't matter.
+ * @param {Map<string, {genre, year}>} [songInfo]  looked-up info by Spotify URI
  */
-function buildLeagueTables(datasets, leagueName) {
+function buildLeagueTables(datasets, leagueName, songInfo) {
+  songInfo = songInfo || new Map();
   var competitors = new Map(); // ID -> row
   var rounds = new Map();      // Round ID -> row
   var submissions = new Map(); // Round ID|URI -> row
@@ -219,13 +477,19 @@ function buildLeagueTables(datasets, leagueName) {
 
   function nameOf(id) { return competitors.has(id) ? competitors.get(id).Name : id; }
 
-  var songs = [];
+  var songs = [], songsMissingInfo = [], missingSeen = new Set();
   submissions.forEach(function (s, key) {
     var round = rounds.get(s['Round ID']);
+    var uri = s['Spotify URI'], info = songInfo.get(uri);
+    if (!info && !missingSeen.has(uri)) {
+      missingSeen.add(uri);
+      songsMissingInfo.push({ uri: uri, artist: s['Artist(s)'], title: s.Title });
+    }
     songs.push({
       artist: s['Artist(s)'], title: s.Title, album: s.Album,
       competitor: nameOf(s['Submitter ID']), points: subPoints.get(key) || 0,
-      round: round ? round.Name : '', submitterId: s['Submitter ID']
+      round: round ? round.Name : '', submitterId: s['Submitter ID'],
+      genre: info ? info.genre : '', year: info && info.year ? info.year : '', lookedUp: !!info
     });
   });
   songs.sort(function (a, b) {
@@ -249,8 +513,34 @@ function buildLeagueTables(datasets, leagueName) {
     uniqueSongs.add((s.artist + '|' + s.title).toLowerCase());
   });
 
+  // Share of submissions by genre and by decade.
+  function breakdown(labelOf, order) {
+    var counts = new Map();
+    songs.forEach(function (s) {
+      var label = labelOf(s);
+      counts.set(label, (counts.get(label) || 0) + 1);
+    });
+    return Array.from(counts.entries()).sort(order).map(function (e) {
+      return [e[0], e[1], songs.length ? e[1] / songs.length : 0];
+    });
+  }
+  var NOT_YET = 'Not looked up yet', UNKNOWN = 'Unknown';
+  function lastIfUnknown(a, b) {
+    var ua = a[0] === UNKNOWN || a[0] === NOT_YET, ub = b[0] === UNKNOWN || b[0] === NOT_YET;
+    return ua !== ub ? (ua ? 1 : -1) : 0;
+  }
+  var byGenre = breakdown(function (s) {
+    return s.genre || (s.lookedUp ? UNKNOWN : NOT_YET);
+  }, function (a, b) { return lastIfUnknown(a, b) || b[1] - a[1] || ciCompare_(a[0], b[0]); });
+  var byDecade = breakdown(function (s) {
+    return s.year ? Math.floor(s.year / 10) * 10 + 's' : (s.lookedUp ? UNKNOWN : NOT_YET);
+  }, function (a, b) { return lastIfUnknown(a, b) || ciCompare_(a[0], b[0]); });
+
   return {
-    songs: songs.map(function (s) { return [s.artist, s.title, s.album, s.competitor, s.points, s.round]; }),
+    songs: songs.map(function (s) { return [s.artist, s.title, s.album, s.competitor, s.points, s.round, s.genre, s.year]; }),
+    byGenre: byGenre,
+    byDecade: byDecade,
+    songsMissingInfo: songsMissingInfo,
     rounds: roundList.map(function (r) { return [r.Name, r.Description, r['Playlist URL'], leagueName]; }),
     points: points,
     stats: [
@@ -330,18 +620,18 @@ var TITLE_BG = '#000000', HEADER_BG = '#434343', HEADER_FG = '#ff0000';
 
 function writeSheets_(ss, result) {
   var songs = writeTable_(ss, 'Songs', 'Artist / Song Master',
-    ['Artist(s)', 'Title', 'Album', 'Competitors Name', 'Points Assigned', 'Rounds Name'],
-    [220, 260, 260, 150, 110, 300], result.songs);
+    ['Artist(s)', 'Title', 'Album', 'Competitors Name', 'Points Assigned', 'Rounds Name', 'Genre', 'Year'],
+    [220, 260, 260, 150, 110, 300, 120, 60], result.songs);
 
   // League stats beside the song list.
-  songs.setColumnWidth(7, 30);
-  songs.setColumnWidth(8, 170);
-  songs.setColumnWidth(9, 80);
-  songs.getRange('H1:I2').merge().setValue('League Stats')
+  songs.setColumnWidth(9, 30);
+  songs.setColumnWidth(10, 170);
+  songs.setColumnWidth(11, 80);
+  songs.getRange('J1:K2').merge().setValue('League Stats')
     .setBackground(TITLE_BG).setFontColor(HEADER_FG).setFontWeight('bold')
     .setHorizontalAlignment('center').setVerticalAlignment('middle');
-  songs.getRange(3, 8, result.stats.length, 2).setValues(result.stats).setFontWeight('bold');
-  songs.getRange(3, 8, result.stats.length, 1).setFontColor('#0000ff');
+  songs.getRange(3, 10, result.stats.length, 2).setValues(result.stats).setFontWeight('bold');
+  songs.getRange(3, 10, result.stats.length, 1).setFontColor('#0000ff');
 
   var rounds = writeTable_(ss, 'Rounds', 'Rounds Master',
     ['Name', 'Description', 'Playlist URL', 'League'],
@@ -358,8 +648,16 @@ function writeSheets_(ss, result) {
   writeTable_(ss, 'Points', '"Lifetime" League Points',
     ['Competitor Name', 'Total Points'], [200, 110], result.points);
 
-  // Put the three tabs first, in order.
-  ['Songs', 'Rounds', 'Points'].forEach(function (name, i) {
+  var stats = ss.getSheetByName('Stats') || ss.insertSheet('Stats');
+  stats.clear();
+  stats.getRange(1, 1, stats.getMaxRows(), stats.getMaxColumns()).breakApart();
+  writeBlock_(stats, 1, 'Songs by Genre', ['Genre', 'Songs', '% of Songs'], result.byGenre);
+  writeBlock_(stats, 5, 'Songs by Decade Recorded', ['Decade', 'Songs', '% of Songs'], result.byDecade);
+  [160, 70, 90, 30, 160, 70, 90].forEach(function (w, i) { stats.setColumnWidth(i + 1, w); });
+  stats.setFrozenRows(2);
+
+  // Put the tabs first, in order.
+  ['Songs', 'Rounds', 'Points', 'Stats'].forEach(function (name, i) {
     ss.setActiveSheet(ss.getSheetByName(name));
     ss.moveActiveSheet(i + 1);
   });
@@ -390,14 +688,27 @@ function writeTable_(ss, name, title, headers, widths, rows) {
   return sh;
 }
 
+/** Writes a titled count / percentage table starting at column `col`. */
+function writeBlock_(sh, col, title, headers, rows) {
+  var cols = headers.length;
+  sh.getRange(1, col, 1, cols).merge().setValue(title)
+    .setBackground(TITLE_BG).setFontColor(HEADER_FG).setFontWeight('bold').setHorizontalAlignment('center');
+  sh.getRange(2, col, 1, cols).setValues([headers])
+    .setBackground(HEADER_BG).setFontColor(HEADER_FG).setFontWeight('bold');
+  if (rows.length) {
+    sh.getRange(3, col, rows.length, cols).setValues(rows);
+    sh.getRange(3, col + cols - 1, rows.length, 1).setNumberFormat('0.0%');
+  }
+}
+
 // ---- Upload dialog -------------------------------------------------------
 
 var UPLOAD_HTML = [
   '<style>body{font-family:Arial,sans-serif;font-size:14px}#msg{margin-top:12px;white-space:pre-wrap}',
   'button{margin-top:12px;padding:6px 14px}</style>',
-  '<div>Choose one or more Music League export <b>.zip</b> files. Already-imported',
-  ' data is skipped automatically.</div>',
-  '<input type="file" id="files" accept=".zip" multiple style="margin-top:12px">',
+  '<div>Choose one or more Music League export <b>.zip</b> files (and optionally a',
+  ' <b>song-info.csv</b>). Already-imported data is skipped automatically.</div>',
+  '<input type="file" id="files" accept=".zip,.csv" multiple style="margin-top:12px">',
   '<br><button id="go" onclick="go()">Import</button>',
   '<div id="msg"></div>',
   '<script>',
@@ -416,5 +727,8 @@ var UPLOAD_HTML = [
 
 // Allow the core logic to be tested in Node.
 if (typeof module !== 'undefined') {
-  module.exports = { buildLeagueTables: buildLeagueTables, parseCsvObjects: parseCsvObjects, naturalCompare_: naturalCompare_ };
+  module.exports = {
+    buildLeagueTables: buildLeagueTables, parseCsvObjects: parseCsvObjects, naturalCompare_: naturalCompare_,
+    lookupSongBatch_: lookupSongBatch_, baseTitle_: baseTitle_, matchKey_: matchKey_, isrcYear_: isrcYear_
+  };
 }
