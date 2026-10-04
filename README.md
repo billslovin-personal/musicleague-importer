@@ -20,7 +20,7 @@ There are two ways to use it:
 |---|---|
 | [`google-sheet/MusicLeague.gs`](google-sheet/MusicLeague.gs) | The Google Apps Script. Paste it into the sheet's script editor. |
 | [`google-sheet/SETUP.md`](google-sheet/SETUP.md) | Step-by-step setup and weekly instructions for the Google Sheet. |
-| [`google-sheet/song-info.csv`](google-sheet/song-info.csv) | Genre, year and lead artist already looked up for every song in the existing exports. Upload it on the first import to skip about an hour of lookups. |
+| [`google-sheet/song-info.csv`](google-sheet/song-info.csv) | Genre, year and lead artist already looked up for every song in the existing exports. Upload it on the first import to skip a few hours of lookups. |
 | [`excel/build-league-sheet.js`](excel/build-league-sheet.js) | The local Node.js script that writes an Excel file (with its `package.json`). |
 
 ## Google Sheet
@@ -117,11 +117,12 @@ to. A competitor's lifetime points are the total across all their songs.
 | Field | Source | Notes |
 |---|---|---|
 | Lead artist | Deezer's main artist for the matched track | Falls back to the first artist in the export (split on ", ") when Deezer doesn't have the song. |
-| Genre | Deezer, the first genre listed for the track's album | Broad labels (Rock, Pop, Alternative, …). About 9% of current songs are *Unknown*, mostly because Deezer's catalog doesn't carry them. |
+| Genre | MusicBrainz: the top genre of the original recording, else its album, else its artist. Falls back to Deezer's album genre. | MusicBrainz genres are fine-grained (Indie Rock, Post-Punk, Doo-Wop); Deezer's are broad (Rock, Pop, Alternative), so both styles appear. The song-info file's Genre Source column says which was used. |
 | Year | Earliest of MusicBrainz's first release, the recording's ISRC year code and the Deezer album date | Remasters and compilations still show the original year. Right for the large majority of songs, not all. |
 
-Matching is strict: a Deezer result is used only when both the artist and the
-title match, so covers, karaoke versions and tribute acts are skipped.
+Matching is strict for both sources: a result is used only when both the
+artist and the title match, so covers, karaoke versions and tribute acts are
+skipped.
 
 ## Status
 

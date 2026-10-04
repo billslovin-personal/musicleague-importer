@@ -50,7 +50,7 @@ free public music databases, Deezer and MusicBrainz.
 3. Pick all the `export-*.zip` files **and** `song-info.csv` (you can select
    several at once) and click **Import**. Larger uploads can take up to a
    minute. `song-info.csv` holds genres and years already looked up for all
-   the existing songs, which saves about an hour of lookups.
+   the existing songs, which saves a few hours of lookups.
 
 After the first import you can delete the empty **Sheet1** tab.
 
@@ -68,15 +68,18 @@ zip's rounds change.
    Uploading only the new zip is enough because earlier data is kept.
    Uploading a zip again is safe, since duplicates are removed automatically.
 2. Click **Music League → Look up genres & years** to fill in the new songs.
-   A week's songs take under a minute.
+   A week's songs take a couple of minutes.
 
 ### About artists, genres and years
 - **Artist** on the Songs tab is the song's lead artist, spelled as Deezer
   lists it. Until a song has been looked up, or if Deezer doesn't have it, the
   first artist named in the Music League export is shown instead. The "Total
   Unique Artists" stat still counts each distinct artist credit from the export.
-- **Genre** comes from Deezer and is a broad label (Rock, Pop, Alternative,
-  Rap/Hip Hop, …). About 1 in 8 songs has no genre there and shows as *Unknown*.
+- **Genre** comes from MusicBrainz, which has fine-grained genres (Indie Rock,
+  Post-Punk, Doo-Wop, …): the top genre of the song's original recording, else
+  of its album, else of its artist. When MusicBrainz has none, Deezer's broader
+  genre (Rock, Pop, Alternative, …) is used instead, so both styles appear.
+  Songs neither source has show as *Unknown*.
 - **Year** is the earliest release of that recording found in MusicBrainz or
   Deezer, so remasters and compilations still show the original year. It's
   right for the large majority of songs but not all of them.

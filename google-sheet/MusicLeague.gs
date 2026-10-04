@@ -27,7 +27,7 @@ var RAW = {
   votes: { sheet: 'raw_votes', cols: ['Spotify URI', 'Voter ID', 'Points Assigned', 'Round ID'] }
 };
 // Looked-up genre/year per song, keyed by Spotify URI.
-var SONG_INFO = { sheet: 'raw_song_info', cols: ['Spotify URI', 'Artist', 'Title', 'Genre', 'Year', 'Looked Up', 'Lead Artist'] };
+var SONG_INFO = { sheet: 'raw_song_info', cols: ['Spotify URI', 'Artist', 'Title', 'Genre', 'Year', 'Looked Up', 'Lead Artist', 'Genre Source'] };
 var LOOKUP_TIME_BUDGET_MS = 4.5 * 60 * 1000; // Apps Script stops scripts at 6 minutes
 
 // ---- Menu ----------------------------------------------------------------
@@ -235,12 +235,18 @@ function writeRaw_(def, rows) {
 
 // ---- Genre / year lookup ---------------------------------------------------
 //
-// Genre comes from Deezer (album genre: Rock, Pop, Alternative, ...). Year is
-// the earliest believable year from MusicBrainz (first release of any matching
-// recording), the Deezer recording's ISRC year code, and the Deezer album date,
-// because the album Spotify/Deezer link to is often a later reissue.
+// Genre comes from MusicBrainz (fine-grained: "indie rock", "post-punk", ...),
+// taking the top genre of the original recording, else its album, else its
+// artist. If MusicBrainz has none, Deezer's broad album genre (Rock, Pop, ...)
+// is used instead. Year is the earliest believable year from MusicBrainz (first
+// release of any matching recording), the Deezer recording's ISRC year code,
+// and the Deezer album date, because the album Spotify/Deezer link to is often
+// a later reissue. The lead artist is Deezer's name for the matched track.
 
 var MB_USER_AGENT = 'MusicLeagueSheet/1.0 (Google Sheets script for a private music league)';
+var MB_MIN_INTERVAL_MS = 1100; // MusicBrainz allows about one request per second
+var mbLastRequestAt_ = 0;
+var mbArtistGenreCache_ = {};  // artist MBID -> genre, for the current run
 
 /**
  * Looks up up to ~10 songs. Returns rows for SONG_INFO; songs that hit a
@@ -285,30 +291,74 @@ function lookupSongBatch_(songs, deadline) {
   for (var i = 0; i < songs.length; i++) {
     if (Date.now() > deadline) break;
     var s = songs[i], t = tracks[i];
-    var started = Date.now();
-    var mb = fetchMusicBrainz_(s.artist, s.title);
-    // MusicBrainz allows about one request per second.
-    Utilities.sleep(Math.max(0, 1100 - (Date.now() - started)));
-    if (t.failed || mb.failed) continue;
-
+    if (t.failed) continue;
     var album = t.track ? albums[t.track.album.id] : null;
     if (t.track && !album) continue; // album lookup failed; retry later
+    var mb = fetchMusicBrainz_(musicBrainzUrl_(s.artist, s.title));
+    if (mb.failed) continue;
+    var mbGenre = musicBrainzGenre_(mb.json, s.artist, s.title);
+    if (mbGenre.failed) continue;
+
     var year = earliestYear_([
       mbEarliestYear_(mb.json, s.artist, s.title),
       t.track ? isrcYear_(t.track.isrc) : null,
       album ? parseInt(String(album.release_date || '').slice(0, 4), 10) : null
     ]);
+    var deezerGenre = album ? deezerGenre_(album) : '';
+    var genre = mbGenre.genre || deezerGenre;
+    var source = mbGenre.genre ? 'MusicBrainz' : deezerGenre ? 'Deezer' : '';
     // The matched Deezer track's main artist, spelled as Deezer has it.
     var lead = t.track ? t.track.artist.name : '';
-    rows.push([s.uri, s.artist, s.title, album ? deezerGenre_(album) : '', year || '', today, lead]);
+    rows.push([s.uri, s.artist, s.title, genre, year || '', today, lead, source]);
   }
   return rows;
 }
 
-function fetchMusicBrainz_(artist, title) {
+/**
+ * Fine-grained genre from MusicBrainz for the song's original recording (the
+ * matching recording released first): its top genre, else its first album's,
+ * else its artist's. Returns {genre} ('' if none) or {failed: true}.
+ */
+function musicBrainzGenre_(searchJson, artist, title) {
+  var rec = mbOriginalRecording_(searchJson, artist, title);
+  if (!rec) return { genre: '' };
+  var base = 'https://musicbrainz.org/ws/2/';
+
+  var full = fetchMusicBrainz_(base + 'recording/' + rec.id + '?fmt=json&inc=genres+releases+release-groups+artists');
+  if (full.failed) return full;
+  var genre = topGenre_(full.json);
+  if (genre) return { genre: genre };
+
+  var releases = (full.json.releases || []).slice().sort(function (a, b) {
+    return String(a.date || '9999').localeCompare(String(b.date || '9999'));
+  });
+  if (releases.length && releases[0]['release-group']) {
+    var rg = fetchMusicBrainz_(base + 'release-group/' + releases[0]['release-group'].id + '?fmt=json&inc=genres');
+    if (rg.failed) return rg;
+    genre = topGenre_(rg.json);
+    if (genre) return { genre: genre };
+  }
+
+  var credit = (full.json['artist-credit'] || [])[0];
+  if (credit && credit.artist) {
+    var id = credit.artist.id;
+    if (!(id in mbArtistGenreCache_)) {
+      var a = fetchMusicBrainz_(base + 'artist/' + id + '?fmt=json&inc=genres');
+      if (a.failed) return a;
+      mbArtistGenreCache_[id] = topGenre_(a.json);
+    }
+    return { genre: mbArtistGenreCache_[id] };
+  }
+  return { genre: '' };
+}
+
+/** Rate-limited MusicBrainz GET with one retry. Returns {json} or {failed: true}. */
+function fetchMusicBrainz_(url) {
   var opts = { muteHttpExceptions: true, headers: { 'User-Agent': MB_USER_AGENT, 'Accept': 'application/json' } };
   for (var attempt = 0; attempt < 2; attempt++) {
-    var res = UrlFetchApp.fetch(musicBrainzUrl_(artist, title), opts);
+    Utilities.sleep(Math.max(0, MB_MIN_INTERVAL_MS - (Date.now() - mbLastRequestAt_)));
+    mbLastRequestAt_ = Date.now();
+    var res = UrlFetchApp.fetch(url, opts);
     if (res.getResponseCode() === 200) return { json: parseJson_(res) };
     Utilities.sleep(2000);
   }
@@ -364,15 +414,42 @@ function deezerGenre_(album) {
   return g ? g.name : '';
 }
 
-function mbEarliestYear_(json, artist, title) {
-  if (!json) return null;
+/** MusicBrainz search results that are this song by this artist. */
+function mbMatchingRecordings_(json, artist, title) {
+  if (!json) return [];
   var t = matchKey_(baseTitle_(title));
-  var years = (json.recordings || []).filter(function (r) {
+  return (json.recordings || []).filter(function (r) {
     return matchKey_(baseTitle_(r.title || '')) === t && (r['artist-credit'] || []).some(function (c) {
       return isArtist_(c.name || '', artist) || (c.artist && isArtist_(c.artist.name || '', artist));
     });
-  }).map(function (r) { return parseInt(String(r['first-release-date'] || '').slice(0, 4), 10); });
-  return earliestYear_(years);
+  });
+}
+
+function mbEarliestYear_(json, artist, title) {
+  return earliestYear_(mbMatchingRecordings_(json, artist, title).map(function (r) {
+    return parseInt(String(r['first-release-date'] || '').slice(0, 4), 10);
+  }));
+}
+
+/** The matching recording released first (most likely the original, not a live or compilation copy). */
+function mbOriginalRecording_(json, artist, title) {
+  return mbMatchingRecordings_(json, artist, title).sort(function (a, b) {
+    return String(a['first-release-date'] || '9999').localeCompare(String(b['first-release-date'] || '9999'));
+  })[0] || null;
+}
+
+/** Highest-voted genre on a MusicBrainz entity, title-cased ("indie rock" -> "Indie Rock"). */
+function topGenre_(entity) {
+  var genres = ((entity && entity.genres) || []).slice().sort(function (a, b) { return b.count - a.count; });
+  return genres.length ? titleCaseGenre_(genres[0].name) : '';
+}
+
+function titleCaseGenre_(name) {
+  return String(name).split(/(\s+|-|\/)/).map(function (w, i) {
+    if (/&/.test(w)) return w.toUpperCase(); // "r&b" -> "R&B"
+    if (i > 0 && /^(and|of|the|n)$/.test(w)) return w; // "drum and bass", "rock n roll"
+    return w.charAt(0).toUpperCase() + w.slice(1);
+  }).join('');
 }
 
 /**
@@ -866,6 +943,8 @@ if (typeof module !== 'undefined') {
   module.exports = {
     buildLeagueTables: buildLeagueTables, parseCsvObjects: parseCsvObjects, naturalCompare_: naturalCompare_,
     lookupSongBatch_: lookupSongBatch_, baseTitle_: baseTitle_, matchKey_: matchKey_, isrcYear_: isrcYear_,
-    deezerSearchUrl_: deezerSearchUrl_, pickDeezerTrack_: pickDeezerTrack_, leagueFromFileName_: leagueFromFileName_
+    deezerSearchUrl_: deezerSearchUrl_, pickDeezerTrack_: pickDeezerTrack_, leagueFromFileName_: leagueFromFileName_,
+    musicBrainzUrl_: musicBrainzUrl_, fetchMusicBrainz_: fetchMusicBrainz_, musicBrainzGenre_: musicBrainzGenre_,
+    titleCaseGenre_: titleCaseGenre_
   };
 }
