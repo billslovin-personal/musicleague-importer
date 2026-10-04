@@ -487,17 +487,18 @@ function buildLeagueTables(datasets, leagueName, songInfo) {
     });
   });
 
-  // Points per submission (a song within a specific round), plus who up/downvoted it
-  // for Music League's tie-breakers.
+  // Points per submission (a song within a specific round), plus who gave it
+  // points and the biggest single vote, for Music League's tie-breakers.
   var subPoints = new Map(), subVoters = new Map();
   votes.forEach(function (v) {
     var key = v['Round ID'] + '|' + v['Spotify URI'], pts = v['Points Assigned'];
     subPoints.set(key, (subPoints.get(key) || 0) + pts);
-    if (!subVoters.has(key)) subVoters.set(key, { up: new Set(), down: new Set() });
-    if (pts > 0) subVoters.get(key).up.add(v['Voter ID']);
-    if (pts < 0) subVoters.get(key).down.add(v['Voter ID']);
+    if (!subVoters.has(key)) subVoters.set(key, { up: new Set(), maxVote: 0 });
+    var sv = subVoters.get(key);
+    if (pts > 0) sv.up.add(v['Voter ID']);
+    if (pts > sv.maxVote) sv.maxVote = pts;
   });
-  var NO_VOTERS = { up: new Set(), down: new Set() };
+  var NO_VOTERS = { up: new Set(), maxVote: 0 };
 
   function nameOf(id) { return competitors.has(id) ? competitors.get(id).Name : id; }
 
@@ -526,13 +527,13 @@ function buildLeagueTables(datasets, leagueName, songInfo) {
   });
 
   // Finishing place of every song in its round. Ties on points are broken the
-  // way Music League does: more upvoters, then fewer downvoters. Songs still
-  // tied after that share the place (1, 1, 3).
+  // way Music League does: more unique voters giving it points, then the
+  // highest single vote. Songs still tied after that share the place (1, 1, 3).
   // Rounds with no votes yet (still in progress) are skipped.
   function beats(o, s) {
     if (o.points !== s.points) return o.points > s.points;
     if (o.voters.up.size !== s.voters.up.size) return o.voters.up.size > s.voters.up.size;
-    return o.voters.down.size < s.voters.down.size;
+    return o.voters.maxVote > s.voters.maxVote;
   }
   var votedRounds = new Set();
   votes.forEach(function (v) { votedRounds.add(v['Round ID']); });
@@ -551,7 +552,7 @@ function buildLeagueTables(datasets, leagueName, songInfo) {
   // Per-competitor totals.
   var comp = new Map();
   function newComp(id) {
-    return { name: nameOf(id), points: 0, songs: 0, wins: 0, top3: 0, upvoters: new Set(), downvoters: new Set() };
+    return { name: nameOf(id), points: 0, songs: 0, wins: 0, top3: 0, voters: new Set() };
   }
   competitors.forEach(function (_, id) { comp.set(id, newComp(id)); });
   songs.forEach(function (s) {
@@ -561,13 +562,11 @@ function buildLeagueTables(datasets, leagueName, songInfo) {
     c.songs++;
     if (place === 1) c.wins++;
     if (place <= 3) c.top3++;
-    s.voters.up.forEach(function (v) { c.upvoters.add(v); });
-    s.voters.down.forEach(function (v) { c.downvoters.add(v); });
+    s.voters.up.forEach(function (v) { c.voters.add(v); });
   });
-  // Standings tie-breakers: most unique upvoters, then fewest unique downvoters.
+  // Standings tie-breaker: most unique voters who gave them points across all rounds.
   var points = Array.from(comp.values()).sort(function (a, b) {
-    return b.points - a.points || b.upvoters.size - a.upvoters.size ||
-      a.downvoters.size - b.downvoters.size || ciCompare_(a.name, b.name);
+    return b.points - a.points || b.voters.size - a.voters.size || ciCompare_(a.name, b.name);
   }).map(function (c) {
     return [c.name, c.points, c.songs, c.songs ? Math.round(c.points / c.songs * 100) / 100 : '', c.wins, c.top3];
   });

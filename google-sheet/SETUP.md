@@ -92,9 +92,11 @@ Viewers can see and filter the tabs but can't change data or run the import.
   changed their display name, the name from the most recent season is used.
 - A song's points are the votes it got in the round it was submitted to.
   A competitor's lifetime points are the total across all their songs.
-- Round wins / top-3 finishes use Music League's tie-breakers: songs tied on
-  points are ranked by the most upvoters, then the fewest downvoters. Songs
-  still tied after that share the place, and each counts as a win. Rounds
-  that don't have any votes yet are skipped.
-- The Points tab breaks ties on total points the same way, using the number of
-  unique people who have ever upvoted (then downvoted) each competitor.
+- Round wins / top-3 finishes use Music League's round tie-breakers: songs
+  tied on points are ranked by the most unique voters who gave them points,
+  then by the highest single vote. Songs still tied after that share the
+  place, and each counts as a win. Rounds that don't have any votes yet are
+  skipped.
+- The Points tab uses Music League's standings tie-breaker: competitors tied
+  on total points are ranked by the most unique voters who have given them
+  points across all rounds.
