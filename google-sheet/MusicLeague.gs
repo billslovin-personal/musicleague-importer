@@ -487,12 +487,17 @@ function buildLeagueTables(datasets, leagueName, songInfo) {
     });
   });
 
-  // Points per submission (a song within a specific round).
-  var subPoints = new Map();
+  // Points per submission (a song within a specific round), plus who up/downvoted it
+  // for Music League's tie-breakers.
+  var subPoints = new Map(), subVoters = new Map();
   votes.forEach(function (v) {
-    var key = v['Round ID'] + '|' + v['Spotify URI'];
-    subPoints.set(key, (subPoints.get(key) || 0) + v['Points Assigned']);
+    var key = v['Round ID'] + '|' + v['Spotify URI'], pts = v['Points Assigned'];
+    subPoints.set(key, (subPoints.get(key) || 0) + pts);
+    if (!subVoters.has(key)) subVoters.set(key, { up: new Set(), down: new Set() });
+    if (pts > 0) subVoters.get(key).up.add(v['Voter ID']);
+    if (pts < 0) subVoters.get(key).down.add(v['Voter ID']);
   });
+  var NO_VOTERS = { up: new Set(), down: new Set() };
 
   function nameOf(id) { return competitors.has(id) ? competitors.get(id).Name : id; }
 
@@ -508,6 +513,7 @@ function buildLeagueTables(datasets, leagueName, songInfo) {
       artist: s['Artist(s)'], title: s.Title, album: s.Album,
       competitor: nameOf(s['Submitter ID']), points: subPoints.get(key) || 0,
       round: round ? round.Name : '', roundId: s['Round ID'], submitterId: s['Submitter ID'],
+      voters: subVoters.get(key) || NO_VOTERS,
       genre: info ? info.genre : '', year: info && info.year ? info.year : '', lookedUp: !!info
     });
   });
@@ -519,8 +525,15 @@ function buildLeagueTables(datasets, leagueName, songInfo) {
     return a.Created < b.Created ? -1 : a.Created > b.Created ? 1 : 0;
   });
 
-  // Finishing place of every song in its round (ties share a place: 1, 1, 3).
+  // Finishing place of every song in its round. Ties on points are broken the
+  // way Music League does: more upvoters, then fewer downvoters. Songs still
+  // tied after that share the place (1, 1, 3).
   // Rounds with no votes yet (still in progress) are skipped.
+  function beats(o, s) {
+    if (o.points !== s.points) return o.points > s.points;
+    if (o.voters.up.size !== s.voters.up.size) return o.voters.up.size > s.voters.up.size;
+    return o.voters.down.size < s.voters.down.size;
+  }
   var votedRounds = new Set();
   votes.forEach(function (v) { votedRounds.add(v['Round ID']); });
   var placeOf = new Map(), byRound = new Map();
@@ -531,26 +544,33 @@ function buildLeagueTables(datasets, leagueName, songInfo) {
   });
   byRound.forEach(function (list) {
     list.forEach(function (s) {
-      placeOf.set(s, 1 + list.filter(function (o) { return o.points > s.points; }).length);
+      placeOf.set(s, 1 + list.filter(function (o) { return beats(o, s); }).length);
     });
   });
 
   // Per-competitor totals.
   var comp = new Map();
-  competitors.forEach(function (_, id) { comp.set(id, { points: 0, songs: 0, wins: 0, top3: 0 }); });
+  function newComp(id) {
+    return { name: nameOf(id), points: 0, songs: 0, wins: 0, top3: 0, upvoters: new Set(), downvoters: new Set() };
+  }
+  competitors.forEach(function (_, id) { comp.set(id, newComp(id)); });
   songs.forEach(function (s) {
-    if (!comp.has(s.submitterId)) comp.set(s.submitterId, { points: 0, songs: 0, wins: 0, top3: 0 });
+    if (!comp.has(s.submitterId)) comp.set(s.submitterId, newComp(s.submitterId));
     var c = comp.get(s.submitterId), place = placeOf.get(s);
     c.points += s.points;
     c.songs++;
     if (place === 1) c.wins++;
     if (place <= 3) c.top3++;
+    s.voters.up.forEach(function (v) { c.upvoters.add(v); });
+    s.voters.down.forEach(function (v) { c.downvoters.add(v); });
   });
-  var points = [];
-  comp.forEach(function (c, id) {
-    points.push([nameOf(id), c.points, c.songs, c.songs ? Math.round(c.points / c.songs * 100) / 100 : '', c.wins, c.top3]);
+  // Standings tie-breakers: most unique upvoters, then fewest unique downvoters.
+  var points = Array.from(comp.values()).sort(function (a, b) {
+    return b.points - a.points || b.upvoters.size - a.upvoters.size ||
+      a.downvoters.size - b.downvoters.size || ciCompare_(a.name, b.name);
+  }).map(function (c) {
+    return [c.name, c.points, c.songs, c.songs ? Math.round(c.points / c.songs * 100) / 100 : '', c.wins, c.top3];
   });
-  points.sort(function (a, b) { return b[1] - a[1] || ciCompare_(a[0], b[0]); });
 
   // All-time top 25 songs (ties at 25th place are all included).
   var ranked = songs.slice().sort(function (a, b) { return b.points - a.points || ciCompare_(a.artist, b.artist); });
