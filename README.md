@@ -40,8 +40,9 @@ A Google Apps Script that adds a **Music League** menu to a Google Sheet:
 **Setup:** follow [`google-sheet/SETUP.md`](google-sheet/SETUP.md). It takes
 about 5 minutes and needs no installs.
 
-**Each week:** download the new export from Music League, name it
-`export-<League name>.zip`, upload it, then run **Look up genres & years**.
+**Each week:** download the new export from Music League, rename it to the
+league's name (e.g. `MFFL VIII.zip`), upload it, then run **Look up genres &
+years**.
 
 **Permissions:** the script uses `@OnlyCurrentDoc`, so it can only access its
 own spreadsheet, not the rest of your Google Drive. The lookup sends each
@@ -75,8 +76,9 @@ from the repository folder:
 npm --prefix excel install
 ```
 
-Then, from the folder holding your `export-*.zip` files (for example the
-repository folder itself), run:
+Then, from the folder holding your export zip files (for example the
+repository folder itself), run the command below. It reads every `.zip` in
+that folder.
 
 ```bash
 node excel/build-league-sheet.js
@@ -100,10 +102,10 @@ safe:
 | Song submission | Round ID + Spotify URI |
 | Vote | Round ID + Spotify URI + voter ID |
 
-**League name:** exports don't include it, so it comes from the zip's file
-name, everything after the first "-": `export-MFFL VIII.zip` → **MFFL VIII**.
-A file name without a "-" gives **Music League**. Each zip's rounds keep the
-name of the file they came from; rename and re-upload a zip to change it.
+**League name:** exports don't include it, so the zip's file name (without
+".zip") is the league name: `MFFL VIII.zip` → **MFFL VIII**. Each zip's
+rounds keep the name of the file they came from; rename and re-upload a zip to
+change it.
 
 **Points:** a song's points are the votes it got in the round it was submitted
 to. A competitor's lifetime points are the total across all their songs.

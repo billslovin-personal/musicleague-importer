@@ -50,7 +50,7 @@ free public music databases, Deezer and MusicBrainz.
      web content in prompts and sidebars"*, and *"Connect to an external
      service"* (used only for the genre/year lookup). Click **Allow**.
    - Then click **Music League → Upload zip files…** again.
-3. Pick all the `export-*.zip` files **and** `song-info.csv` (you can select
+3. Pick all the export zip files **and** `song-info.csv` (you can select
    several at once) and click **Import**. Larger uploads can take up to a
    minute. `song-info.csv` holds genres and years already looked up for all
    the existing songs, which saves a few hours of lookups.
@@ -58,12 +58,11 @@ free public music databases, Deezer and MusicBrainz.
 After the first import you can delete the empty **Sheet1** tab.
 
 ### Naming the zip files (league name)
-Music League's exports don't include the league's name, so it comes from the
-zip's file name: everything after the first "-". Rename each export before
-uploading, e.g. `export-MFFL VIII.zip` shows as **MFFL VIII** in the League
-column of the Rounds tab. A file with no "-" in its name shows as **Music
-League**. To fix a name later, rename the zip and upload it again; only that
-zip's rounds change.
+Music League's exports don't include the league's name, so the zip's file
+name is used as the league name. Rename each export to its league's name
+before uploading, e.g. `MFFL VIII.zip` shows as **MFFL VIII** in the League
+column of the Rounds tab. To fix a name later, rename the zip and upload it
+again; only that zip's rounds change.
 
 ### Each new week / season
 1. Download the new export zip from Music League, name it as above, and upload

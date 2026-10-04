@@ -16,7 +16,7 @@
  * Setup: see SETUP.md.
  */
 
-// League name used when a zip's file name has no "-" (see leagueFromFileName_).
+// League name used if a zip's file name is somehow empty (see leagueFromFileName_).
 var DEFAULT_LEAGUE_NAME = 'Music League';
 
 // Hidden tabs that hold the de-duplicated raw export data.
@@ -67,7 +67,7 @@ function startNewLeague() {
   rebuildFromStoredData(); // leaves empty tabs
 
   ui.alert('Everything has been erased. Upload the new league\'s zip files with ' +
-    'Music League → Upload zip files… (name each zip "export-<League name>.zip").');
+    'Music League → Upload zip files… (name each zip after its league, e.g. "MFFL VIII.zip").');
 }
 
 // ---- Upload / rebuild ----------------------------------------------------
@@ -844,15 +844,13 @@ function parseCsvObjects(text) {
 function clean_(v) { return v == null ? '' : String(v).trim(); }
 
 /**
- * League name from a zip's file name: the text after the first "-", e.g.
- * "export-MFFL VIII.zip" -> "MFFL VIII". A browser's duplicate-download suffix
- * like " (1)" is dropped. No "-" (or nothing after it) -> DEFAULT_LEAGUE_NAME.
+ * League name from a zip's file name: the whole name without ".zip", e.g.
+ * "MFFL VIII.zip" -> "MFFL VIII". A browser's duplicate-download suffix like
+ * " (1)" is dropped. An empty name falls back to DEFAULT_LEAGUE_NAME.
  */
 function leagueFromFileName_(fileName) {
   var base = String(fileName).replace(/^.*[\\\/]/, '').replace(/\.zip$/i, '').replace(/\s*\(\d+\)$/, '');
-  var dash = base.indexOf('-');
-  var league = dash < 0 ? '' : base.slice(dash + 1).trim();
-  return league || DEFAULT_LEAGUE_NAME;
+  return base.trim() || DEFAULT_LEAGUE_NAME;
 }
 
 function ciCompare_(a, b) {

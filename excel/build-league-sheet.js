@@ -1,5 +1,6 @@
 // Builds a Music League master spreadsheet (Songs, Rounds, Points) from the
-// Music League export-*.zip files in the folder it's run from.
+// Music League export zip files in the folder it's run from. Each zip's file
+// name is used as its league name (e.g. "MFFL VIII.zip" -> "MFFL VIII").
 //
 // Usage (from the folder holding the zips):
 //   node path/to/build-league-sheet.js [outputFile]
@@ -15,21 +16,20 @@ const { parse } = require('csv-parse/sync');
 const ExcelJS = require('exceljs');
 
 // ---- Configuration -------------------------------------------------------
-const DEFAULT_LEAGUE_NAME = 'Music League'; // when a zip's name has no "-"
+const DEFAULT_LEAGUE_NAME = 'Music League'; // if a zip's name is somehow empty
 // The folder the command was run from (npm sets INIT_CWD for "npm run").
 const INPUT_DIR = process.env.INIT_CWD || process.cwd();
-const ZIP_PATTERN = /^export-.*\.zip$/i;
+const ZIP_PATTERN = /\.zip$/i;
 const OUTPUT_FILE = process.argv[2] || path.join(INPUT_DIR, 'Music League.xlsx');
 // --------------------------------------------------------------------------
 
 const clean = (v) => (v == null ? '' : String(v).replace(/^﻿/, '').trim());
 
-// League name from a zip's file name: the text after the first "-",
-// e.g. "export-MFFL VIII.zip" -> "MFFL VIII". The exports don't include it.
+// League name from a zip's file name, without ".zip" or a duplicate-download
+// " (1)", e.g. "MFFL VIII.zip" -> "MFFL VIII". The exports don't include it.
 function leagueFromFileName(fileName) {
   const base = path.basename(fileName).replace(/\.zip$/i, '').replace(/\s*\(\d+\)$/, '');
-  const dash = base.indexOf('-');
-  return (dash < 0 ? '' : base.slice(dash + 1).trim()) || DEFAULT_LEAGUE_NAME;
+  return base.trim() || DEFAULT_LEAGUE_NAME;
 }
 
 async function readZip(file) {
