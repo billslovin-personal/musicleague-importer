@@ -8,7 +8,8 @@ lifetime totals across every season.
 ## What you need
 
 - A Google account.
-- These two files from this folder:
+- These two files from the
+  [google-sheet folder on GitHub](https://github.com/billslovin-personal/musicleague-importer/tree/main/google-sheet):
   - [`MusicLeague.gs`](MusicLeague.gs): the script.
   - [`song-info.csv`](song-info.csv): genres, years and artist names already
     looked up for every existing song, which saves a few hours of lookups.
