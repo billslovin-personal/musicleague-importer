@@ -8,7 +8,7 @@ There are two ways to use it:
 
 | | Google Sheet (recommended) | Local Excel file |
 |---|---|---|
-| Where | [`google-sheet/`](google-sheet/) | [`build-league-sheet.js`](build-league-sheet.js) |
+| Where | [`google-sheet/`](google-sheet/) | [`excel/`](excel/) |
 | Who runs it | Anyone with the sheet open, from a menu | Someone with Node.js installed |
 | Sharing | Share the sheet link with the league | Send the `.xlsx` file around |
 | Tabs | Songs, Rounds, Points, Artists, Stats | Songs, Rounds, Points |
@@ -21,7 +21,7 @@ There are two ways to use it:
 | [`google-sheet/MusicLeague.gs`](google-sheet/MusicLeague.gs) | The Google Apps Script. Paste it into the sheet's script editor. |
 | [`google-sheet/SETUP.md`](google-sheet/SETUP.md) | Step-by-step setup and weekly instructions for the Google Sheet. |
 | [`google-sheet/song-info.csv`](google-sheet/song-info.csv) | Genre, year and lead artist already looked up for every song in the existing exports. Upload it on the first import to skip about an hour of lookups. |
-| [`build-league-sheet.js`](build-league-sheet.js) | The local Node.js script that writes an Excel file. |
+| [`excel/build-league-sheet.js`](excel/build-league-sheet.js) | The local Node.js script that writes an Excel file (with its `package.json`). |
 
 ## Google Sheet
 
@@ -65,20 +65,22 @@ APIs.
 
 ## Local Excel file
 
-Requires [Node.js](https://nodejs.org) 18 or newer.
+Requires [Node.js](https://nodejs.org) 18 or newer. Install its packages once,
+from the repository folder:
 
 ```bash
-npm install
+npm --prefix excel install
 ```
 
-Put the `export-*.zip` files in this folder, then:
+Then, from the folder holding your `export-*.zip` files (for example the
+repository folder itself), run:
 
 ```bash
-node build-league-sheet.js
+node excel/build-league-sheet.js
 ```
 
-This writes `Music League.xlsx` with the Songs, Rounds and Points tabs. You can
-pass a different output path as an argument. It doesn't do the genre/year/lead
+This writes `Music League.xlsx` into that folder with the Songs, Rounds and
+Points tabs. You can pass a different output path as an argument. It doesn't do the genre/year/lead
 artist lookup, so its Songs tab shows the full artist credit from the export.
 
 ## How the data is combined

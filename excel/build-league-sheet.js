@@ -1,7 +1,8 @@
 // Builds a Music League master spreadsheet (Songs, Rounds, Points) from the
-// Music League export-*.zip files in this directory.
+// Music League export-*.zip files in the folder it's run from.
 //
-// Usage:  node build-league-sheet.js [outputFile]
+// Usage (from the folder holding the zips):
+//   node path/to/build-league-sheet.js [outputFile]
 //
 // Each zip holds competitors.csv, rounds.csv, submissions.csv and votes.csv.
 // Zips are processed in file-name order; when the same record appears in more
@@ -15,7 +16,8 @@ const ExcelJS = require('exceljs');
 
 // ---- Configuration -------------------------------------------------------
 const DEFAULT_LEAGUE_NAME = 'Music League'; // when a zip's name has no "-"
-const INPUT_DIR = __dirname;
+// The folder the command was run from (npm sets INIT_CWD for "npm run").
+const INPUT_DIR = process.env.INIT_CWD || process.cwd();
 const ZIP_PATTERN = /^export-.*\.zip$/i;
 const OUTPUT_FILE = process.argv[2] || path.join(INPUT_DIR, 'Music League.xlsx');
 // --------------------------------------------------------------------------
