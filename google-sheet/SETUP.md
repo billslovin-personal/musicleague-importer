@@ -9,8 +9,8 @@ This turns a Google Sheet into the league's master spreadsheet with five tabs:
   points per song, round wins and top-3 finishes.
 - **Artists:** running total of songs submitted per artist, with the last round
   each artist was used in. Handy for rounds with "artist used only once" rules.
-  It counts the first artist in the Music League export, splitting on ", "
-  (so "Crosby, Stills & Nash" counts as "Crosby").
+  It uses the same lead artist as the Songs tab, grouping spelling variants
+  like "Belle and Sebastian" / "Belle & Sebastian".
 - **Stats:** the all-time top 25 songs, each competitor's biggest fan (who has
   given them the most points), and the share of songs and average points by
   genre and by decade recorded.

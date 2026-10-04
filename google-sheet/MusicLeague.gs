@@ -583,20 +583,24 @@ function buildLeagueTables(datasets, leagueName, songInfo) {
     return [c.name, c.points, c.songs, c.songs ? Math.round(c.points / c.songs * 100) / 100 : '', c.wins, c.top3];
   });
 
-  // Running total of songs per artist, using the first artist in the export's
-  // Artist(s) field (split on ", "). Every submission counts.
+  // Running total of songs per artist, using the same lead artist as the Songs
+  // tab. Spelling variants ("Belle and Sebastian" / "Belle & Sebastian") are
+  // grouped, showing the most common spelling. Every submission counts.
   var byArtist = new Map();
   songs.forEach(function (s) {
-    var name = leadArtistGuess_(s.artist), key = name.toLowerCase();
+    var key = matchKey_(s.lead);
     var round = rounds.get(s.roundId), created = round ? round.Created : '';
-    var a = byArtist.get(key) || { name: name, songs: 0, lastCreated: '', lastRound: '' };
+    var a = byArtist.get(key) || { spellings: new Map(), songs: 0, lastCreated: '', lastRound: '' };
+    a.spellings.set(s.lead, (a.spellings.get(s.lead) || 0) + 1);
     a.songs++;
     if (created >= a.lastCreated) { a.lastCreated = created; a.lastRound = s.round; }
     byArtist.set(key, a);
   });
-  var artistTotals = Array.from(byArtist.values()).sort(function (a, b) {
-    return b.songs - a.songs || ciCompare_(a.name, b.name);
-  }).map(function (a) { return [a.name, a.songs, a.lastRound]; });
+  var artistTotals = Array.from(byArtist.values()).map(function (a) {
+    var name = '', best = 0;
+    a.spellings.forEach(function (n, spelling) { if (n > best) { best = n; name = spelling; } });
+    return [name, a.songs, a.lastRound];
+  }).sort(function (a, b) { return b[1] - a[1] || ciCompare_(a[0], b[0]); });
 
   // All-time top 25 songs (ties at 25th place are all included).
   var ranked = songs.slice().sort(function (a, b) { return b.points - a.points || ciCompare_(a.artist, b.artist); });

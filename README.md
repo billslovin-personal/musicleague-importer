@@ -41,8 +41,8 @@ about 5 minutes and needs no installs.
 - **Rounds:** every round with its description, playlist link and league name.
 - **Points:** lifetime points per competitor, songs submitted, average points per
   song, round wins and top-3 finishes.
-- **Artists:** running total of songs submitted per lead artist (first name in
-  the export, split on ", "), with the last round each was used in.
+- **Artists:** running total of songs submitted per lead artist (the same artist
+  shown on the Songs tab), with the last round each was used in.
 - **Stats:** all-time top 25 songs, each competitor's biggest fan, and the share
   of songs and average points by genre and by decade recorded.
 
