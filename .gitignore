@@ -1,0 +1,5 @@
+node_modules/
+
+# League data: contains members' names, IDs and comments. Keep out of the repo.
+*.zip
+*.xlsx
